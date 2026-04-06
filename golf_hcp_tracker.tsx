@@ -15,6 +15,7 @@ const FORMATS = ["Einzel","Vierer","Vierball"];
 const COLORS = { hcp:"#1D9E75", stroke:"#378ADD", stableford:"#7F77DD", border:"var(--color-border-tertiary)", textSec:"var(--color-text-secondary)" };
 const inp: CSSProperties = { width:"100%", boxSizing:"border-box", padding:"8px 10px", borderRadius:"var(--border-radius-md)", border:"0.5px solid var(--color-border-secondary)", background:"#ffffff", color:"#111", fontSize:14, fontFamily:"var(--font-sans)" };
 const sel = { ...inp };
+const appShellPadding = "max(1rem, calc(env(safe-area-inset-top) + 0.5rem)) max(1rem, calc(env(safe-area-inset-right) + 1rem)) calc(env(safe-area-inset-bottom) + 3rem) max(1rem, calc(env(safe-area-inset-left) + 1rem))";
 
 function initDB() {
   try {
@@ -250,7 +251,7 @@ function AppNotice({title, description, tone="accent", primaryAction=null, secon
   return (
     <div style={{
       position:"sticky",
-      bottom:16,
+      bottom:"calc(16px + env(safe-area-inset-bottom))",
       zIndex:tone === "accent" ? 15 : 16,
       marginTop:12,
       background:accent.background,
@@ -373,7 +374,7 @@ function UpdateAppPrompt() {
 
 function Modal({title, children, onClose}) {
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:100,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 16px",overflowY:"auto"}}
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:100,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"max(24px, calc(env(safe-area-inset-top) + 16px)) max(16px, calc(env(safe-area-inset-right) + 12px)) max(24px, calc(env(safe-area-inset-bottom) + 16px)) max(16px, calc(env(safe-area-inset-left) + 12px))",overflowY:"auto"}}
       onClick={e=>{if(e.target===e.currentTarget) onClose();}}>
       <div style={{background:"#fff",borderRadius:"var(--border-radius-lg)",border:"0.5px solid var(--color-border-tertiary)",padding:"20px 24px",width:"100%",maxWidth:520}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -957,7 +958,7 @@ export default function App() {
   const newRound = () => setForm({ date:new Date().toISOString().slice(0,10), mode:"Stableford", format:"Einzel", holes:18, submitted:false, markerSigned:false, nineHoleAllowed:false, playingHcp:displayHcp });
 
   if (!db.profile.name) return (
-    <div style={{maxWidth:480,margin:"40px auto",padding:"0 1rem",fontFamily:"var(--font-sans)",color:"var(--color-text-primary)"}}>
+    <div style={{maxWidth:480,margin:"0 auto",padding:appShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
       <div style={{fontSize:20,fontWeight:500,marginBottom:4}}>Golf HCP Tracker</div>
       <div style={{fontSize:13,color:COLORS.textSec,marginBottom:24}}>Einmalige Einrichtung – DGV · WHS</div>
       <ProfileForm profile={db.profile} onSave={saveProfile} isSetup/>
@@ -965,13 +966,13 @@ export default function App() {
   );
 
   return (
-    <div style={{maxWidth:760,margin:"0 auto",padding:"1rem 1rem 3rem",fontFamily:"var(--font-sans)",color:"var(--color-text-primary)"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+    <div style={{maxWidth:760,margin:"0 auto",padding:appShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,gap:12,flexWrap:"wrap"}}>
         <div>
           <div style={{fontSize:20,fontWeight:500}}>Golf HCP Tracker</div>
           <div style={{fontSize:13,color:COLORS.textSec}}>{db.profile.name} · DGV · WHS</div>
         </div>
-        <div style={{textAlign:"right"}}>
+        <div style={{textAlign:"right",marginLeft:"auto",minWidth:140}}>
           <div style={{fontSize:11,color:COLORS.textSec,display:"inline-flex",alignItems:"center",gap:6}}>
             <span>{estimatedHcp?"Aktueller HCP Index":"Start-HCP"}</span>
             <HcpTooltip
@@ -988,9 +989,9 @@ export default function App() {
         </div>
       </div>
 
-      <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:`0.5px solid ${COLORS.border}`,paddingBottom:4}}>
+      <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:`0.5px solid ${COLORS.border}`,paddingBottom:6,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none"}}>
         {[["dashboard","Dashboard"],["rounds","Runden"],["courses","Plätze"],["profile","Profil"],["data","Daten"],["info","HCP-Info"]].map(([id,label])=>(
-          <button key={id} onClick={()=>setView(id)} style={{padding:"6px 14px",borderRadius:"var(--border-radius-md)",background:view===id?COLORS.hcp:"transparent",color:view===id?"#fff":COLORS.textSec,border:"none",cursor:"pointer",fontWeight:view===id?500:400,fontSize:14}}>{label}</button>
+          <button key={id} onClick={()=>setView(id)} style={{padding:"6px 14px",borderRadius:"var(--border-radius-md)",background:view===id?COLORS.hcp:"transparent",color:view===id?"#fff":COLORS.textSec,border:"none",cursor:"pointer",fontWeight:view===id?500:400,fontSize:14,whiteSpace:"nowrap",flexShrink:0}}>{label}</button>
         ))}
       </div>
 
