@@ -445,7 +445,7 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew}) {
   const trendData = useMemo(()=>{
     const el=[...hcpRounds].reverse();
     return el.map((r,i)=>{
-      const diffs=el.slice(0,i+1).map(x=>calcScoreDiff(x)).filter(d=>d!==null);
+      const diffs=el.slice(Math.max(0,i-19),i+1).map(x=>calcScoreDiff(x)).filter(d=>d!==null);
       const h=calcHcp(diffs);
       return h!==null?{i:i+1,hcp:h,date:r.date}:null;
     }).filter(Boolean);
