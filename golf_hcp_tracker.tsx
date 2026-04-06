@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type CSSProperties, type ReactNode } from "react";
 
 const TEES = ["Gelb","Weiß","Blau","Rot"];
 const MODES = ["Stableford","Stroke Play"];
 const FORMATS = ["Einzel","Vierer","Vierball"];
 const COLORS = { hcp:"#1D9E75", stroke:"#378ADD", stableford:"#7F77DD", border:"var(--color-border-tertiary)", textSec:"var(--color-text-secondary)" };
-const inp = { width:"100%", boxSizing:"border-box", padding:"8px 10px", borderRadius:"var(--border-radius-md)", border:"0.5px solid var(--color-border-secondary)", background:"#ffffff", color:"#111", fontSize:14, fontFamily:"var(--font-sans)" };
+const inp: CSSProperties = { width:"100%", boxSizing:"border-box", padding:"8px 10px", borderRadius:"var(--border-radius-md)", border:"0.5px solid var(--color-border-secondary)", background:"#ffffff", color:"#111", fontSize:14, fontFamily:"var(--font-sans)" };
 const sel = { ...inp };
 
 function initDB() {
@@ -22,23 +22,78 @@ function isHcpEligible(r) {
     (parseInt(r.holes)===18 || r.nineHoleAllowed);
 }
 
-function calcScoreDiff(r) {
+const HCP_RULES = [
+  {maxRounds:2,take:1,adj:-2},
+  {maxRounds:4,take:1,adj:-1},
+  {maxRounds:5,take:1,adj:0},
+  {maxRounds:6,take:2,adj:-1},
+  {maxRounds:8,take:2,adj:0},
+  {maxRounds:11,take:3,adj:0},
+  {maxRounds:14,take:4,adj:0},
+  {maxRounds:16,take:5,adj:0},
+  {maxRounds:18,take:6,adj:0},
+  {maxRounds:19,take:7,adj:0},
+  {maxRounds:20,take:8,adj:0},
+];
+
+function round1(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function getGrossScore(r) {
+  const gbe = parseFloat(r.gbe);
+  if (Number.isFinite(gbe)) return gbe;
+  const adjustedGross = parseFloat(r.adjustedGross);
+  return Number.isFinite(adjustedGross) ? adjustedGross : null;
+}
+
+function getHandicapRule(roundCount) {
+  return HCP_RULES.find(rule=>roundCount<=rule.maxRounds) || HCP_RULES[HCP_RULES.length-1];
+}
+
+function calcExpectedNineHoleDiff(handicapIndex) {
+  const base = Math.min(54, Math.max(0, parseFloat(handicapIndex) || 54));
+  if (base >= 54) return 28.4;
+  return round1(((base * 1.04) + 2.4) / 2);
+}
+
+function calcScoreDiff(r, handicapIndexForNineHole) {
   const cr=parseFloat(r.courseRating), sr=parseFloat(r.slopeRating);
-  const par=parseFloat(r.par)||36, phcp=parseFloat(r.playingHcp)||0;
-  const gbe=parseFloat(r.gbe)||parseFloat(r.adjustedGross);
-  if (!cr||!sr||!gbe) return null;
+  const gross=getGrossScore(r);
+  if (!cr||!sr||gross===null) return null;
   if (parseInt(r.holes)===9) {
-    const gbe18 = gbe + par + phcp + 1;
-    return parseFloat(((gbe18 - cr*2)*113/sr).toFixed(1));
+    const playedNineDiff = ((gross-cr)*113)/sr;
+    return round1(playedNineDiff + calcExpectedNineHoleDiff(handicapIndexForNineHole));
   }
-  return parseFloat(((gbe-cr)*113/sr).toFixed(1));
+  return round1(((gross-cr)*113)/sr);
+}
+
+function sortRoundsChronologically(a, b) {
+  const byDate = (a.date||"").localeCompare(b.date||"");
+  if (byDate!==0) return byDate;
+  const byCreated = (a.createdAt||"").localeCompare(b.createdAt||"");
+  if (byCreated!==0) return byCreated;
+  return (a.id||0) - (b.id||0);
+}
+
+function buildHandicapTimeline(rounds, startHcp) {
+  const eligibleRounds = [...rounds].filter(isHcpEligible).sort(sortRoundsChronologically);
+  const diffs = [];
+  let currentHcp = Math.min(54, Math.max(0, parseFloat(startHcp) || 54));
+
+  return eligibleRounds.map(round=>{
+    const diff = calcScoreDiff(round, currentHcp);
+    if (diff===null) return null;
+    diffs.push(diff);
+    currentHcp = calcHcp(diffs) ?? currentHcp;
+    return { round, diff, hcpAfter: currentHcp, preRoundHcp: currentHcp };
+  }).filter(Boolean);
 }
 
 function missingDiffReason(r) {
   if (!parseFloat(r.courseRating)) return "Course Rating fehlt";
   if (!parseFloat(r.slopeRating)) return "Slope Rating fehlt";
   if (!parseFloat(r.gbe) && !parseFloat(r.adjustedGross)) return "GBE/AGS fehlt";
-  if (parseInt(r.holes)===9 && !parseFloat(r.playingHcp)) return "Playing HCP fehlt";
   return null;
 }
 
@@ -53,20 +108,13 @@ function hcpStatus(r) {
 function calcHcp(diffs) {
   if (!diffs.length) return null;
   const n = Math.min(diffs.length, 20);
-  const table = [
-    {take:1,adj:-2},{take:1,adj:-1},{take:2,adj:-1},{take:2,adj:-1},
-    {take:2,adj:1},{take:2,adj:1},{take:3,adj:0},{take:3,adj:0},
-    {take:3,adj:0},{take:3,adj:0},{take:3,adj:0},{take:4,adj:0},
-    {take:4,adj:0},{take:4,adj:0},{take:5,adj:0},{take:6,adj:0},
-    {take:7,adj:0},{take:8,adj:0},{take:9,adj:0},{take:10,adj:0},
-  ];
-  const {take,adj} = table[n-1];
+  const {take,adj} = getHandicapRule(n);
   const best = [...diffs].sort((a,b)=>a-b).slice(0,take);
   const avg = best.reduce((s,d)=>s+d,0)/best.length;
-  return Math.min(54, parseFloat(((avg+adj)*0.96).toFixed(1)));
+  return Math.min(54, round1(avg + adj));
 }
 
-function field(label, children, hint) {
+function field(label: string, children: ReactNode, hint?: string) {
   return (
     <div style={{marginBottom:14}}>
       <label style={{fontSize:12,color:"var(--color-text-secondary)",display:"block",marginBottom:4}}>
@@ -152,11 +200,10 @@ function HcpTrendChart({trend}) {
   );
 }
 
-function HcpRoundsTable({rounds}) {
-  const takes = [1,1,2,2,2,2,3,3,3,3,3,4,4,4,5,6,7,8,9,10];
+function HcpRoundsTable({rounds, diffByRoundId}) {
   const n = Math.min(rounds.length, 20);
-  const take = takes[n-1];
-  const withDiffs = [...rounds].reverse().slice(0,20).map(r=>({r, diff:calcScoreDiff(r)}));
+  const take = n > 0 ? getHandicapRule(n).take : 0;
+  const withDiffs = [...rounds].reverse().slice(0,20).map(r=>({r, diff:diffByRoundId.get(r.id) ?? null}));
   const counting = new Set(
     [...withDiffs].filter(x=>x.diff!==null).sort((a,b)=>a.diff-b.diff).slice(0,take).map(x=>x.r.id)
   );
@@ -201,7 +248,7 @@ function HcpRoundsTable({rounds}) {
   );
 }
 
-function ProfileForm({profile, onSave, isSetup}) {
+function ProfileForm({profile, onSave, isSetup=false}) {
   const [p, setP] = useState({name:profile.name||"", startHcp:profile.startHcp??54});
   const set = (k,v) => setP(prev=>({...prev,[k]:v}));
   return (
@@ -289,7 +336,7 @@ function RoundForm({initial, courses, onSave, onCancel}) {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             {field("Stableford Punkte", <input type="number" style={inp} value={r.stablefordPoints||""} onChange={e=>{
               const p=parseInt(e.target.value);
-              const upd={stablefordPoints:p};
+              const upd: Record<string, number>={stablefordPoints:p};
               if(cr&&sr&&p) upd.adjustedGross=Math.round(cr+(par+phcpAdj-p)*(sr/113));
               setR(prev=>({...prev,...upd}));
             }} placeholder="23"/>)}
@@ -352,9 +399,9 @@ function CourseForm({initial, onSave, onCancel}) {
   );
 }
 
-function RoundRow({round:r, onEdit, onDelete, compact, counting}) {
+function RoundRow({round:r, onEdit=()=>{}, onDelete=()=>{}, compact=false, counting=false, diffByRoundId}) {
   const status=hcpStatus(r);
-  const diff=calcScoreDiff(r);
+  const diff=diffByRoundId.get(r.id) ?? null;
   return (
     <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:"var(--border-radius-md)",border:`0.5px solid ${counting?"#1D9E75":"var(--color-border-tertiary)"}`,background:counting?"#E1F5EE":"#fff",marginBottom:8}}>
       <div style={{width:10,height:10,borderRadius:"50%",background:status.dot,flexShrink:0}}/>
@@ -380,21 +427,10 @@ function RoundRow({round:r, onEdit, onDelete, compact, counting}) {
   );
 }
 
-function RoundList({rounds, courses, onNew, onEdit, onDelete}) {
+function RoundList({rounds, courses, onNew, onEdit, onDelete, countingIds, diffByRoundId}) {
   const [filter, setFilter] = useState("all");
-
   const hcpEligible = rounds.filter(isHcpEligible);
-  const n = Math.min(hcpEligible.length, 20);
-  const takes = [1,1,2,2,2,2,3,3,3,3,3,4,4,4,5,6,7,8,9,10];
-  const take = n > 0 ? takes[n-1] : 0;
-  const countingIds = new Set(
-    [...hcpEligible].reverse().slice(0,20)
-      .map(r=>({r, diff:calcScoreDiff(r)}))
-      .filter(x=>x.diff!==null)
-      .sort((a,b)=>a.diff-b.diff)
-      .slice(0,take)
-      .map(x=>x.r.id)
-  );
+  const take = hcpEligible.length > 0 ? getHandicapRule(Math.min(hcpEligible.length, 20)).take : 0;
 
   const filtered = rounds.filter(r=>{
     if (filter==="hcp") return isHcpEligible(r);
@@ -413,7 +449,7 @@ function RoundList({rounds, courses, onNew, onEdit, onDelete}) {
         <button onClick={onNew} style={{padding:"8px 14px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:500}}>+ Neue Runde</button>
       </div>
       {filtered.length===0 && <div style={{color:"var(--color-text-secondary)",fontSize:14,padding:"24px 0"}}>Keine Runden gefunden.</div>}
-      {filtered.map(r=><RoundRow key={r.id} round={r} onEdit={()=>onEdit(r)} onDelete={()=>onDelete(r.id)} counting={countingIds.has(r.id)}/>)}
+      {filtered.map(r=><RoundRow key={r.id} round={r} onEdit={()=>onEdit(r)} onDelete={()=>onDelete(r.id)} counting={countingIds.has(r.id)} diffByRoundId={diffByRoundId}/>)}
     </div>
   );
 }
@@ -439,17 +475,10 @@ function CourseList({courses, onNew, onEdit}) {
   );
 }
 
-function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew}) {
+function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTimeline, diffByRoundId}) {
   const avgDiff = recentDiffs.length?(recentDiffs.reduce((s,d)=>s+d,0)/recentDiffs.length).toFixed(1):null;
-  const chartData = useMemo(()=>[...hcpRounds].reverse().map((r,i)=>({x:i+1,diff:calcScoreDiff(r),mode:r.mode,date:r.date})),[hcpRounds]);
-  const trendData = useMemo(()=>{
-    const el=[...hcpRounds].reverse();
-    return el.map((r,i)=>{
-      const diffs=el.slice(Math.max(0,i-19),i+1).map(x=>calcScoreDiff(x)).filter(d=>d!==null);
-      const h=calcHcp(diffs);
-      return h!==null?{i:i+1,hcp:h,date:r.date}:null;
-    }).filter(Boolean);
-  },[hcpRounds]);
+  const chartData = useMemo(()=>hcpTimeline.map((entry,i)=>({x:i+1,diff:entry.diff,mode:entry.round.mode,date:entry.round.date})),[hcpTimeline]);
+  const trendData = useMemo(()=>hcpTimeline.map((entry,i)=>({i:i+1,hcp:entry.hcpAfter,date:entry.round.date})),[hcpTimeline]);
 
   return (
     <div>
@@ -462,7 +491,7 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew}) {
         ))}
       </div>
 
-      {hcpRounds.length>0 && <HcpRoundsTable rounds={hcpRounds}/>}
+      {hcpRounds.length>0 && <HcpRoundsTable rounds={hcpRounds} diffByRoundId={diffByRoundId}/>}
 
       {(chartData.length>0 || trendData.length>=2) && (
         <div style={{display:"grid",gridTemplateColumns:trendData.length>=2&&chartData.length>0?"1fr 1fr":"1fr",gap:16,marginBottom:24}}>
@@ -490,7 +519,7 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew}) {
       ) : (
         <div>
           <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>Letzte Runden</div>
-          {rounds.slice(0,5).map(r=><RoundRow key={r.id} round={r} compact/>)}
+          {rounds.slice(0,5).map(r=><RoundRow key={r.id} round={r} compact diffByRoundId={diffByRoundId}/>)}
         </div>
       )}
     </div>
@@ -565,8 +594,6 @@ function DataPortability({db, onImport}) {
 }
 
 function HcpInfo() {
-  const takes = [1,1,2,2,2,2,3,3,3,3,3,4,4,4,5,6,7,8,9,10];
-  const adjs  = [-2,-1,-1,-1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
   const card = (children) => (
     <div style={{background:"#fff",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"16px 20px",marginBottom:14}}>
       {children}
@@ -594,7 +621,7 @@ function HcpInfo() {
         {formula("Differenzial = (GBE − Course Rating) × 113 ÷ Slope Rating")}
         {p("GBE = Gross Brutto Ergebnis (angepasstes Brutto-Score). Course Rating und Slope Rating stehen auf der Scorekarte des Platzes.")}
         {p("Beispiel: GBE 95, CR 72.0, SR 130 → (95 − 72) × 113 ÷ 130 = 20.0")}
-        {formula("9-Loch: GBE18 = GBE + Par + Playing HCP + 1\ndann gleiche Formel mit CR × 2 und SR")}
+        {formula("9-Loch: tatsächliches 9-Loch-Differenzial\n= (GBE − Course Rating) × 113 ÷ Slope Rating\n\n18-Loch-Wert = 9-Loch-Differenzial + erwartetes 9-Loch-Differenzial\naus dem aktuellen Handicap Index")}
       </>)}
 
       {card(<>
@@ -604,12 +631,12 @@ function HcpInfo() {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",background:"var(--color-background-secondary)",padding:"6px 12px",fontSize:11,fontWeight:500,color:"var(--color-text-secondary)"}}>
             <span>Runden</span><span style={{textAlign:"center"}}>Beste</span><span style={{textAlign:"right"}}>Anpassung</span>
           </div>
-          {takes.map((t,i)=>(
+          {HCP_RULES.map((rule,i)=>(
             <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"5px 12px",fontSize:12,borderTop:"0.5px solid var(--color-border-tertiary)",background:i%2===0?"#fff":"var(--color-background-secondary)"}}>
-              <span>{i+1}</span>
-              <span style={{textAlign:"center"}}>{t}</span>
-              <span style={{textAlign:"right",color:adjs[i]<0?"#E24B4A":adjs[i]>0?"#888":"inherit"}}>
-                {adjs[i]<0 ? adjs[i] : adjs[i]>0 ? `+${adjs[i]}` : "–"}
+              <span>{i===0 ? `1–${rule.maxRounds}` : `${HCP_RULES[i-1].maxRounds+1}–${rule.maxRounds}`}</span>
+              <span style={{textAlign:"center"}}>{rule.take}</span>
+              <span style={{textAlign:"right",color:rule.adj<0?"#E24B4A":rule.adj>0?"#888":"inherit"}}>
+                {rule.adj<0 ? rule.adj : rule.adj>0 ? `+${rule.adj}` : "–"}
               </span>
             </div>
           ))}
@@ -618,9 +645,8 @@ function HcpInfo() {
 
       {card(<>
         {h("Schritt 3 – Handicap Index berechnen")}
-        {p("Der Durchschnitt der ausgewählten Differenziale wird mit einem Faktor von 0,96 multipliziert (\"Playing Conditions Calculation\"). Das Ergebnis wird auf 1 Dezimalstelle gerundet und auf max. 54 begrenzt.")}
-        {formula("HCP Index = Ø(beste Differenziale + Anpassung) × 0,96")}
-        {p("Der Faktor 0,96 sorgt dafür, dass der HCP Index leicht unter dem tatsächlichen Durchschnitt liegt – das System geht davon aus, dass Spieler ihr bestes Spiel wiederholen können.")}
+        {p("Der Handicap Index ergibt sich aus dem Mittelwert der aktuell zählenden Differenziale plus der WHS-Anpassung für kleine Rundenzahlen. Das Ergebnis wird auf 1 Dezimalstelle gerundet und auf max. 54 begrenzt.")}
+        {formula("HCP Index = Ø(beste Differenziale) + Anpassung")}
       </>)}
 
       {card(<>
@@ -659,9 +685,22 @@ export default function App() {
   const deleteRound = id => { updateDB(db=>{ db.rounds=db.rounds.filter(r=>r.id!==id); return db; }); setDeleteConfirm(null); };
 
   const sortedRounds = useMemo(()=>[...db.rounds].sort((a,b)=>b.date.localeCompare(a.date)),[db.rounds]);
+  const hcpTimeline = useMemo(()=>buildHandicapTimeline(db.rounds, db.profile.startHcp ?? 54),[db.rounds, db.profile.startHcp]);
+  const diffByRoundId = useMemo(()=>new Map(hcpTimeline.map(entry=>[entry.round.id, entry.diff])),[hcpTimeline]);
   const hcpRounds = useMemo(()=>sortedRounds.filter(isHcpEligible),[sortedRounds]);
-  const recentDiffs = useMemo(()=>hcpRounds.map(r=>calcScoreDiff(r)).filter(d=>d!==null).slice(0,20),[hcpRounds]);
-  const estimatedHcp = useMemo(()=>calcHcp(recentDiffs),[recentDiffs]);
+  const recentTimeline = useMemo(()=>hcpTimeline.slice(-20),[hcpTimeline]);
+  const recentDiffs = useMemo(()=>recentTimeline.map(entry=>entry.diff),[recentTimeline]);
+  const estimatedHcp = useMemo(()=>hcpTimeline.length ? hcpTimeline[hcpTimeline.length-1].hcpAfter : null,[hcpTimeline]);
+  const countingIds = useMemo(()=>{
+    const roundCount = recentTimeline.length;
+    const take = roundCount > 0 ? getHandicapRule(roundCount).take : 0;
+    return new Set(
+      [...recentTimeline]
+        .sort((a,b)=>a.diff-b.diff)
+        .slice(0,take)
+        .map(entry=>entry.round.id)
+    );
+  },[recentTimeline]);
   const displayHcp = estimatedHcp??db.profile.startHcp??54;
 
   const newRound = () => setForm({ date:new Date().toISOString().slice(0,10), mode:"Stableford", format:"Einzel", holes:18, submitted:false, markerSigned:false, nineHoleAllowed:false, playingHcp:displayHcp });
@@ -694,8 +733,8 @@ export default function App() {
         ))}
       </div>
 
-      {view==="dashboard" && <Dashboard rounds={sortedRounds} hcpRounds={hcpRounds} recentDiffs={recentDiffs} estimatedHcp={estimatedHcp} onNew={()=>{newRound();setView("rounds");}}/>}
-      {view==="rounds" && <RoundList rounds={sortedRounds} courses={db.courses} onNew={newRound} onEdit={r=>setForm({...r})} onDelete={id=>setDeleteConfirm(id)}/>}
+      {view==="dashboard" && <Dashboard rounds={sortedRounds} hcpRounds={hcpRounds} recentDiffs={recentDiffs} estimatedHcp={estimatedHcp} onNew={()=>{newRound();setView("rounds");}} hcpTimeline={hcpTimeline} diffByRoundId={diffByRoundId}/>}
+      {view==="rounds" && <RoundList rounds={sortedRounds} courses={db.courses} onNew={newRound} onEdit={r=>setForm({...r})} onDelete={id=>setDeleteConfirm(id)} countingIds={countingIds} diffByRoundId={diffByRoundId}/>}
       {view==="courses" && <CourseList courses={db.courses} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:""})} onEdit={c=>setCourseForm({...c})}/>}
       {view==="profile" && <ProfileForm profile={db.profile} onSave={saveProfile}/>}
       {view==="data" && <DataPortability db={db} onImport={data=>{ saveDB(data); setDB(data); }}/>}
