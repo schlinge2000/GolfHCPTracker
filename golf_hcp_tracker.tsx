@@ -187,7 +187,7 @@ function HcpRoundsTable({rounds}) {
                 <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{r.date} · {r.holes} Loch · PHCP {r.playingHcp}</div>
               </div>
               <div style={{fontSize:14,fontWeight:500,textAlign:"right",color:counts?"#1D9E75":"var(--color-text-primary)"}}>
-                {diff!==null ? diff : "–"}
+                {diff!==null ? diff : <span title={missingDiffReason(r)||""} style={{color:"#E24B4A",fontSize:12,cursor:"help"}}>fehlt{missingDiffReason(r)?" ⚠":""}​</span>}
               </div>
               <div style={{textAlign:"center",color:"#1D9E75",fontWeight:500}}>{counts?"✓":""}</div>
               <div style={{textAlign:"right"}}>
