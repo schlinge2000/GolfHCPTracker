@@ -494,6 +494,73 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew}) {
   );
 }
 
+function DataPortability({db, onImport}) {
+  const [importError, setImportError] = useState("");
+  const [importSuccess, setImportSuccess] = useState(false);
+
+  const handleExport = () => {
+    const json = JSON.stringify(db, null, 2);
+    const blob = new Blob([json], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `golf-hcp-export-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = (e) => {
+    setImportError("");
+    setImportSuccess(false);
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result as string);
+        if (!data.rounds || !data.courses || !data.profile) throw new Error("Ungültiges Format");
+        onImport(data);
+        setImportSuccess(true);
+      } catch(err) {
+        setImportError("Datei konnte nicht gelesen werden. Bitte eine gültige Export-Datei verwenden.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const btn = (onClick, label, danger=false) => (
+    <button onClick={onClick} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:danger?"#E24B4A":COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:500,fontSize:14}}>
+      {label}
+    </button>
+  );
+
+  return (
+    <div style={{background:"#fff",borderRadius:"var(--border-radius-lg)",border:"0.5px solid var(--color-border-tertiary)",padding:"20px 24px"}}>
+      <div style={{marginBottom:24}}>
+        <div style={{fontSize:14,fontWeight:500,marginBottom:6}}>Export</div>
+        <div style={{fontSize:13,color:"var(--color-text-secondary)",marginBottom:12}}>
+          Alle Runden, Plätze und Profildaten als JSON-Datei herunterladen.
+        </div>
+        {btn(handleExport, `Exportieren (${db.rounds.length} Runden, ${db.courses.length} Plätze)`)}
+      </div>
+
+      <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:20}}>
+        <div style={{fontSize:14,fontWeight:500,marginBottom:6}}>Import</div>
+        <div style={{fontSize:13,color:"var(--color-text-secondary)",marginBottom:12}}>
+          Daten aus einer Export-Datei wiederherstellen. <strong>Bestehende Daten werden überschrieben.</strong>
+        </div>
+        <label style={{display:"inline-block",padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"#F5F4F0",border:"0.5px solid var(--color-border-secondary)",cursor:"pointer",fontWeight:500,fontSize:14,color:"#111"}}>
+          JSON-Datei wählen
+          <input type="file" accept=".json,application/json" onChange={handleImport} style={{display:"none"}}/>
+        </label>
+        {importSuccess && <div style={{marginTop:10,fontSize:13,color:"#1D9E75",fontWeight:500}}>Import erfolgreich.</div>}
+        {importError && <div style={{marginTop:10,fontSize:13,color:"#E24B4A"}}>{importError}</div>}
+      </div>
+    </div>
+  );
+}
+
 function HcpInfo() {
   const takes = [1,1,2,2,2,2,3,3,3,3,3,4,4,4,5,6,7,8,9,10];
   const adjs  = [-2,-1,-1,-1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
@@ -619,7 +686,7 @@ export default function App() {
       </div>
 
       <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:`0.5px solid ${COLORS.border}`,paddingBottom:4}}>
-        {[["dashboard","Dashboard"],["rounds","Runden"],["courses","Plätze"],["profile","Profil"],["info","HCP-Info"]].map(([id,label])=>(
+        {[["dashboard","Dashboard"],["rounds","Runden"],["courses","Plätze"],["profile","Profil"],["data","Daten"],["info","HCP-Info"]].map(([id,label])=>(
           <button key={id} onClick={()=>setView(id)} style={{padding:"6px 14px",borderRadius:"var(--border-radius-md)",background:view===id?COLORS.hcp:"transparent",color:view===id?"#fff":COLORS.textSec,border:"none",cursor:"pointer",fontWeight:view===id?500:400,fontSize:14}}>{label}</button>
         ))}
       </div>
@@ -628,6 +695,7 @@ export default function App() {
       {view==="rounds" && <RoundList rounds={sortedRounds} courses={db.courses} onNew={newRound} onEdit={r=>setForm({...r})} onDelete={id=>setDeleteConfirm(id)}/>}
       {view==="courses" && <CourseList courses={db.courses} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:""})} onEdit={c=>setCourseForm({...c})}/>}
       {view==="profile" && <ProfileForm profile={db.profile} onSave={saveProfile}/>}
+      {view==="data" && <DataPortability db={db} onImport={data=>{ saveDB(data); setDB(data); }}/>}
       {view==="info" && <HcpInfo/>}
 
       {form && <Modal title={form.id?"Runde bearbeiten":"Neue Runde"} onClose={()=>setForm(null)}><RoundForm initial={form} courses={db.courses} onSave={saveRound} onCancel={()=>setForm(null)}/></Modal>}
