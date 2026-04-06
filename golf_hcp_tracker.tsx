@@ -441,7 +441,7 @@ function CourseList({courses, onNew, onEdit}) {
 
 function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew}) {
   const avgDiff = recentDiffs.length?(recentDiffs.reduce((s,d)=>s+d,0)/recentDiffs.length).toFixed(1):null;
-  const chartData = useMemo(()=>[...hcpRounds].reverse().slice(-20).map((r,i)=>({x:i+1,diff:calcScoreDiff(r),mode:r.mode})),[hcpRounds]);
+  const chartData = useMemo(()=>[...hcpRounds].reverse().slice(-20).map((r,i)=>({x:i+1,diff:calcScoreDiff(r),mode:r.mode,date:r.date})),[hcpRounds]);
   const trendData = useMemo(()=>{
     const el=[...hcpRounds].reverse();
     return el.map((r,i)=>{
