@@ -129,6 +129,90 @@ function badge(label, bg, color) {
   return <span style={{fontSize:11,fontWeight:500,padding:"2px 8px",borderRadius:6,background:bg,color,whiteSpace:"nowrap"}}>{label}</span>;
 }
 
+function formatAdjustment(adj) {
+  if (!adj) return "keine";
+  return adj > 0 ? `+${adj.toFixed(1)}` : adj.toFixed(1);
+}
+
+function HcpTooltip({displayHcp, estimatedHcp, roundCount, take, adjustment, countingDiffs}) {
+  const [open, setOpen] = useState(false);
+  const countingAverage = countingDiffs.length ? round1(countingDiffs.reduce((sum, diff)=>sum+diff,0) / countingDiffs.length) : null;
+
+  return (
+    <div
+      style={{position:"relative",display:"inline-flex",alignItems:"center",gap:6}}
+      onMouseEnter={()=>setOpen(true)}
+      onMouseLeave={()=>setOpen(false)}
+    >
+      <button
+        type="button"
+        aria-label="HCP-Berechnung anzeigen"
+        onClick={()=>setOpen(prev=>!prev)}
+        style={{
+          width:18,
+          height:18,
+          borderRadius:"50%",
+          border:`0.5px solid ${COLORS.border}`,
+          background:"#fff",
+          color:COLORS.hcp,
+          fontSize:11,
+          fontWeight:700,
+          cursor:"pointer",
+          display:"inline-flex",
+          alignItems:"center",
+          justifyContent:"center",
+          padding:0,
+        }}
+      >
+        ?
+      </button>
+      {open && (
+        <div
+          style={{
+            position:"absolute",
+            top:"calc(100% + 8px)",
+            right:0,
+            width:260,
+            background:"#fff",
+            border:`0.5px solid ${COLORS.border}`,
+            borderRadius:"var(--border-radius-md)",
+            boxShadow:"0 8px 24px rgba(17, 17, 17, 0.12)",
+            padding:"12px 14px",
+            zIndex:20,
+            textAlign:"left",
+          }}
+        >
+          <div style={{fontSize:12,fontWeight:600,color:"#111",marginBottom:8}}>Aktuelle HCP-Berechnung</div>
+          {!estimatedHcp ? (
+            <div style={{fontSize:12,lineHeight:1.5,color:"var(--color-text-secondary)"}}>
+              Noch keine HCP-wirksame Runde. Aktuell wird dein Start-HCP {displayHcp.toFixed(1)} angezeigt.
+            </div>
+          ) : (
+            <>
+              <div style={{fontSize:12,lineHeight:1.5,color:"var(--color-text-secondary)",marginBottom:6}}>
+                Von {roundCount} HCP-wirksamen Runden zählen aktuell {take} in die Berechnung.
+              </div>
+              <div style={{fontSize:12,lineHeight:1.5,color:"var(--color-text-secondary)",marginBottom:6}}>
+                WHS-Anpassung: {formatAdjustment(adjustment)}
+              </div>
+              {countingDiffs.length > 0 && (
+                <div style={{fontSize:12,lineHeight:1.5,color:"var(--color-text-secondary)",marginBottom:6}}>
+                  Zählende Differentials: {countingDiffs.map(diff=>diff.toFixed(1)).join(", ")}
+                </div>
+              )}
+              {countingAverage!==null && (
+                <div style={{fontSize:12,lineHeight:1.5,color:"#111"}}>
+                  Ø {countingAverage.toFixed(1)} {adjustment ? `${adjustment > 0 ? "+" : ""}${adjustment.toFixed(1)}` : "+ 0,0"} = {displayHcp.toFixed(1)}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Modal({title, children, onClose}) {
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:100,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 16px",overflowY:"auto"}}
@@ -701,6 +785,15 @@ export default function App() {
         .map(entry=>entry.round.id)
     );
   },[recentTimeline]);
+  const hcpRule = useMemo(()=>recentTimeline.length ? getHandicapRule(recentTimeline.length) : null,[recentTimeline]);
+  const countingDiffs = useMemo(()=>{
+    if (!recentTimeline.length) return [];
+    const take = hcpRule?.take ?? 0;
+    return [...recentTimeline]
+      .map(entry=>entry.diff)
+      .sort((a,b)=>a-b)
+      .slice(0,take);
+  },[recentTimeline, hcpRule]);
   const displayHcp = estimatedHcp??db.profile.startHcp??54;
 
   const newRound = () => setForm({ date:new Date().toISOString().slice(0,10), mode:"Stableford", format:"Einzel", holes:18, submitted:false, markerSigned:false, nineHoleAllowed:false, playingHcp:displayHcp });
@@ -721,7 +814,17 @@ export default function App() {
           <div style={{fontSize:13,color:COLORS.textSec}}>{db.profile.name} · DGV · WHS</div>
         </div>
         <div style={{textAlign:"right"}}>
-          <div style={{fontSize:11,color:COLORS.textSec}}>{estimatedHcp?"Aktueller HCP Index":"Start-HCP"}</div>
+          <div style={{fontSize:11,color:COLORS.textSec,display:"inline-flex",alignItems:"center",gap:6}}>
+            <span>{estimatedHcp?"Aktueller HCP Index":"Start-HCP"}</span>
+            <HcpTooltip
+              displayHcp={displayHcp}
+              estimatedHcp={estimatedHcp}
+              roundCount={recentTimeline.length}
+              take={hcpRule?.take ?? 0}
+              adjustment={hcpRule?.adj ?? 0}
+              countingDiffs={countingDiffs}
+            />
+          </div>
           <div style={{fontSize:36,fontWeight:500,color:COLORS.hcp,lineHeight:1.1}}>{displayHcp}</div>
           <div style={{fontSize:11,color:COLORS.textSec}}>{estimatedHcp?`aus ${Math.min(hcpRounds.length,20)} HCP-wirks. Runden`:"noch keine gewerteten Runden"}</div>
         </div>
