@@ -1,5 +1,14 @@
 import { useState, useEffect, useMemo, type CSSProperties, type ReactNode } from "react";
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
+type PwaUpdateEvent = CustomEvent<{
+  updateSW: (reloadPage?: boolean) => Promise<void>;
+}>;
+
 const TEES = ["Gelb","Weiß","Blau","Rot"];
 const MODES = ["Stableford","Stroke Play"];
 const FORMATS = ["Einzel","Vierer","Vierball"];
@@ -210,6 +219,155 @@ function HcpTooltip({displayHcp, estimatedHcp, roundCount, take, adjustment, cou
         </div>
       )}
     </div>
+  );
+}
+
+function AppNotice({title, description, tone="accent", primaryAction=null, secondaryAction}) {
+  const accent = tone === "accent"
+    ? {
+        background:"linear-gradient(135deg, #1D9E75 0%, #0f6f55 100%)",
+        text:"#fff",
+        subtext:"rgba(255,255,255,0.88)",
+        border:"rgba(255,255,255,0.22)",
+        primaryBg:"#fff",
+        primaryText:"#0f6f55",
+        secondaryText:"#fff",
+        secondaryBorder:"0.5px solid rgba(255,255,255,0.45)",
+        shadow:"0 12px 28px rgba(15, 111, 85, 0.22)",
+      }
+    : {
+        background:"linear-gradient(135deg, #f5f4f0 0%, #ebe7dc 100%)",
+        text:"#111",
+        subtext:"var(--color-text-secondary)",
+        border:"var(--color-border-tertiary)",
+        primaryBg:COLORS.hcp,
+        primaryText:"#fff",
+        secondaryText:"var(--color-text-primary)",
+        secondaryBorder:`0.5px solid ${COLORS.border}`,
+        shadow:"0 10px 24px rgba(17, 17, 17, 0.1)",
+      };
+
+  return (
+    <div style={{
+      position:"sticky",
+      bottom:16,
+      zIndex:tone === "accent" ? 15 : 16,
+      marginTop:12,
+      background:accent.background,
+      color:accent.text,
+      border:tone === "accent" ? "none" : `0.5px solid ${accent.border}`,
+      borderRadius:"var(--border-radius-lg)",
+      padding:"14px 16px",
+      display:"flex",
+      alignItems:"center",
+      justifyContent:"space-between",
+      gap:12,
+      boxShadow:accent.shadow,
+      flexWrap:"wrap",
+    }}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:10,flex:"1 1 260px"}}>
+        <div style={{width:10,height:10,borderRadius:"50%",background:tone === "accent" ? "#fff" : COLORS.hcp,marginTop:5,flexShrink:0}}/>
+        <div>
+          <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>{title}</div>
+          <div style={{fontSize:12,lineHeight:1.5,color:accent.subtext}}>{description}</div>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        {primaryAction && (
+          <button onClick={primaryAction.onClick} style={{padding:"8px 14px",borderRadius:"var(--border-radius-md)",background:accent.primaryBg,color:accent.primaryText,border:"none",cursor:"pointer",fontWeight:600,fontSize:13}}>
+            {primaryAction.label}
+          </button>
+        )}
+        <button onClick={secondaryAction.onClick} style={{padding:"8px 12px",borderRadius:"var(--border-radius-md)",background:"transparent",color:accent.secondaryText,border:accent.secondaryBorder,cursor:"pointer",fontSize:13}}>
+          {secondaryAction.label}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function InstallAppPrompt() {
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [isIos, setIsIos] = useState(false);
+
+  useEffect(()=>{
+    const media = window.matchMedia("(display-mode: standalone)");
+    const updateStandalone = () => {
+      const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
+      setIsStandalone(media.matches || Boolean(navigatorWithStandalone.standalone));
+    };
+
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    setIsIos(/iphone|ipad|ipod/.test(userAgent));
+    updateStandalone();
+
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setDeferredPrompt(event as BeforeInstallPromptEvent);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    media.addEventListener("change", updateStandalone);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      media.removeEventListener("change", updateStandalone);
+    };
+  },[]);
+
+  if (dismissed || isStandalone) return null;
+  if (!deferredPrompt && !isIos) return null;
+
+  const install = async () => {
+    if (!deferredPrompt) return;
+    await deferredPrompt.prompt();
+    const choice = await deferredPrompt.userChoice;
+    if (choice.outcome === "accepted") setDeferredPrompt(null);
+  };
+
+  return (
+    <AppNotice
+      title="App installieren"
+      description={deferredPrompt
+        ? "Installiere den Tracker auf Handy oder Desktop fuer schnellen Offline-Zugriff."
+        : "Auf dem iPhone: Teilen > Zum Home-Bildschirm, dann startet der Tracker wie eine App."}
+      primaryAction={deferredPrompt ? {label:"Installieren", onClick:install} : null}
+      secondaryAction={{label:"Schliessen", onClick:()=>setDismissed(true)}}
+    />
+  );
+}
+
+function UpdateAppPrompt() {
+  const [updateSW, setUpdateSW] = useState<null | ((reloadPage?: boolean) => Promise<void>)>(null);
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(()=>{
+    const handleUpdateAvailable = (event: Event) => {
+      const updateEvent = event as PwaUpdateEvent;
+      setUpdateSW(()=>updateEvent.detail.updateSW);
+      setDismissed(false);
+    };
+
+    window.addEventListener("pwa:update-available", handleUpdateAvailable);
+    return () => window.removeEventListener("pwa:update-available", handleUpdateAvailable);
+  },[]);
+
+  if (!updateSW || dismissed) return null;
+
+  const reloadApp = async () => {
+    await updateSW(true);
+  };
+
+  return (
+    <AppNotice
+      title="Update verfuegbar"
+      description="Eine neue Version des Trackers ist geladen und kann jetzt aktiviert werden."
+      tone="neutral"
+      primaryAction={{label:"Neu laden", onClick:reloadApp}}
+      secondaryAction={{label:"Spaeter", onClick:()=>setDismissed(true)}}
+    />
   );
 }
 
@@ -842,6 +1000,9 @@ export default function App() {
       {view==="profile" && <ProfileForm profile={db.profile} onSave={saveProfile}/>}
       {view==="data" && <DataPortability db={db} onImport={data=>{ saveDB(data); setDB(data); }}/>}
       {view==="info" && <HcpInfo/>}
+
+      <UpdateAppPrompt/>
+      <InstallAppPrompt/>
 
       {form && <Modal title={form.id?"Runde bearbeiten":"Neue Runde"} onClose={()=>setForm(null)}><RoundForm initial={form} courses={db.courses} onSave={saveRound} onCancel={()=>setForm(null)}/></Modal>}
       {courseForm && <Modal title={courseForm.id?"Platz bearbeiten":"Neuer Platz"} onClose={()=>setCourseForm(null)}><CourseForm initial={courseForm} onSave={saveCourse} onCancel={()=>setCourseForm(null)}/></Modal>}
