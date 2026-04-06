@@ -441,7 +441,7 @@ function CourseList({courses, onNew, onEdit}) {
 
 function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew}) {
   const avgDiff = recentDiffs.length?(recentDiffs.reduce((s,d)=>s+d,0)/recentDiffs.length).toFixed(1):null;
-  const chartData = useMemo(()=>[...hcpRounds].reverse().slice(-20).map((r,i)=>({x:i+1,diff:calcScoreDiff(r),mode:r.mode,date:r.date})),[hcpRounds]);
+  const chartData = useMemo(()=>[...hcpRounds].reverse().map((r,i)=>({x:i+1,diff:calcScoreDiff(r),mode:r.mode,date:r.date})),[hcpRounds]);
   const trendData = useMemo(()=>{
     const el=[...hcpRounds].reverse();
     return el.map((r,i)=>{
@@ -464,17 +464,20 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew}) {
 
       {hcpRounds.length>0 && <HcpRoundsTable rounds={hcpRounds}/>}
 
-      {chartData.length>0 && (
-        <div style={{marginBottom:24}}>
-          <div style={{fontSize:14,fontWeight:500,marginBottom:12}}>Score Differenzials</div>
-          <ScoreChart data={chartData}/>
-        </div>
-      )}
-
-      {trendData.length>=2 && (
-        <div style={{marginBottom:24}}>
-          <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>HCP-Entwicklung</div>
-          <HcpTrendChart trend={trendData}/>
+      {(chartData.length>0 || trendData.length>=2) && (
+        <div style={{display:"grid",gridTemplateColumns:trendData.length>=2&&chartData.length>0?"1fr 1fr":"1fr",gap:16,marginBottom:24}}>
+          {chartData.length>0 && (
+            <div>
+              <div style={{fontSize:14,fontWeight:500,marginBottom:12}}>Score Differenzials</div>
+              <ScoreChart data={chartData}/>
+            </div>
+          )}
+          {trendData.length>=2 && (
+            <div>
+              <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>HCP-Entwicklung</div>
+              <HcpTrendChart trend={trendData}/>
+            </div>
+          )}
         </div>
       )}
 
