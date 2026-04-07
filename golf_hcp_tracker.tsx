@@ -509,6 +509,11 @@ function buildProjectedHandicap({recentDiffs, currentHcp, round}) {
 }
 
 function calcScoreDiff(r, handicapIndexForNineHole) {
+  const reportedDiff = parseFloat(r.reportedDiff);
+  if (r?.source === "golf.de-pdf" && Number.isFinite(reportedDiff)) {
+    return round1(reportedDiff);
+  }
+
   const cr=parseFloat(r.courseRating), sr=parseFloat(r.slopeRating);
   const gross=getGrossScore(r);
   if (!cr||!sr||gross===null) return null;
@@ -1500,7 +1505,7 @@ function DataPortability({db, onJsonImport, onGolfDePdfImport}) {
   const [jsonStatus, setJsonStatus] = useState({ tone:"", message:"" });
   const [pdfStatus, setPdfStatus] = useState({ tone:"", message:"" });
   const [pdfImportMode, setPdfImportMode] = useState("merge");
-  const importCard = (title, description, actionLabel, accept, onChange, status, tone="neutral") => {
+  const importCard = (title, description, actionLabel, accept, onChange, status, tone="neutral", extraContent=null) => {
     const background = tone === "pdf"
       ? "linear-gradient(180deg, rgba(225,241,251,0.96) 0%, rgba(244,249,253,0.96) 100%)"
       : "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(246,248,245,0.95) 100%)";
@@ -1510,6 +1515,7 @@ function DataPortability({db, onJsonImport, onGolfDePdfImport}) {
       <div style={{...subtleCardStyle,background,border:`1px solid ${borderColor}`,padding:"18px 20px"}}>
         <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>{title}</div>
         <div style={{fontSize:13,color:"var(--color-text-secondary)",marginBottom:14,lineHeight:1.55}}>{description}</div>
+        {extraContent}
         <label style={{display:"inline-block",padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:tone==="pdf"?"#0C447C":"#F5F4F0",border:tone==="pdf"?"1px solid #0C447C":"0.5px solid var(--color-border-secondary)",cursor:"pointer",fontWeight:600,fontSize:14,color:tone==="pdf"?"#fff":"#111"}}>
           {actionLabel}
           <input type="file" accept={accept} onChange={onChange} style={{display:"none"}}/>
@@ -1602,18 +1608,23 @@ function DataPortability({db, onJsonImport, onGolfDePdfImport}) {
             handleGolfDeImport,
             pdfStatus,
             "pdf",
+            <div style={{display:"inline-flex",alignItems:"center",gap:4,marginBottom:12,padding:"4px",borderRadius:999,background:"rgba(12,68,124,0.08)",border:"1px solid rgba(12,68,124,0.12)"}}>
+              <button
+                type="button"
+                onClick={()=>setPdfImportMode("merge")}
+                style={{padding:"5px 10px",borderRadius:999,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:pdfImportMode==="merge"?"#0C447C":"transparent",color:pdfImportMode==="merge"?"#fff":"#0C447C"}}
+              >
+                Zusammenführen
+              </button>
+              <button
+                type="button"
+                onClick={()=>setPdfImportMode("replace")}
+                style={{padding:"5px 10px",borderRadius:999,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:pdfImportMode==="replace"?"#0C447C":"transparent",color:pdfImportMode==="replace"?"#fff":"#0C447C"}}
+              >
+                Ersetzen
+              </button>
+            </div>
           )}
-        </div>
-        <div style={{marginTop:12,padding:"12px 14px",borderRadius:"var(--border-radius-md)",background:"rgba(12,68,124,0.06)",border:"1px solid rgba(12,68,124,0.12)"}}>
-          <div style={{fontSize:13,fontWeight:600,marginBottom:8,color:"#0C447C"}}>golf.de Importmodus</div>
-          <label style={{display:"flex",alignItems:"flex-start",gap:10,fontSize:13,color:"var(--color-text-primary)",cursor:"pointer",marginBottom:8}}>
-            <input type="radio" name="pdf-import-mode" checked={pdfImportMode==="merge"} onChange={()=>setPdfImportMode("merge")} style={{marginTop:2}}/>
-            <span>Mit bestehenden Daten zusammenführen und nur neue Runden/Plätze ergänzen.</span>
-          </label>
-          <label style={{display:"flex",alignItems:"flex-start",gap:10,fontSize:13,color:"var(--color-text-primary)",cursor:"pointer"}}>
-            <input type="radio" name="pdf-import-mode" checked={pdfImportMode==="replace"} onChange={()=>setPdfImportMode("replace")} style={{marginTop:2}}/>
-            <span>Bestehende Runden, Plätze und Simulationen vor dem PDF-Import ersetzen. Das Profil bleibt erhalten.</span>
-          </label>
         </div>
       </div>
     </div>
