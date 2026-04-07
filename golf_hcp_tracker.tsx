@@ -1283,6 +1283,116 @@ function HcpInfo() {
   );
 }
 
+function LandingPage({profile, onSave}) {
+  const featureCardStyle: CSSProperties = {
+    ...subtleCardStyle,
+    padding: "18px 18px 20px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+  };
+  const stepStyle: CSSProperties = {
+    ...cardStyle,
+    padding: "18px 20px",
+    display: "flex",
+    gap: 14,
+    alignItems: "flex-start",
+  };
+  const sectionTitleStyle: CSSProperties = {
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: "0.14em",
+    textTransform: "uppercase",
+    color: "rgba(255,255,255,0.72)",
+    marginBottom: 10,
+  };
+
+  return (
+    <div style={{maxWidth:980,margin:"0 auto",padding:appShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
+      <div style={{...cardStyle,padding:"28px 28px 30px",marginBottom:18,background:"linear-gradient(145deg, rgba(20,46,37,0.98) 0%, rgba(18,57,44,0.95) 44%, rgba(29,158,117,0.82) 100%)",color:"#fff",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 82% 18%, rgba(255,255,255,0.2), transparent 24%), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",backgroundSize:"auto, 28px 28px",opacity:0.35,pointerEvents:"none"}}/>
+        <div style={{position:"relative",display:"flex",flexWrap:"wrap",gap:24,alignItems:"start"}}>
+          <div style={{flex:"1 1 420px",minWidth:0}}>
+            <div style={sectionTitleStyle}>Golf Handicap Im Browser</div>
+            <div style={{fontSize:40,lineHeight:1.05,fontWeight:700,maxWidth:560,marginBottom:12}}>Der einfache Tracker fuer HCP, Runden und Verlauf.</div>
+            <div style={{fontSize:16,lineHeight:1.6,color:"rgba(255,255,255,0.78)",maxWidth:560,marginBottom:18}}>
+              Runden rein, Handicap raus. Klar, lokal und direkt im Browser.
+            </div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:22}}>
+              {badge("DGV · WHS", "rgba(255,255,255,0.14)", "#fff")}
+              {badge("lokal im Browser", "rgba(255,255,255,0.14)", "#fff")}
+              {badge("Simulator inklusive", "rgba(255,255,255,0.14)", "#fff")}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr))",gap:12}}>
+              <div style={{padding:"14px 16px",borderRadius:"var(--border-radius-md)",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.12)"}}>
+                <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.68)",marginBottom:6}}>Tracken</div>
+                <div style={{fontSize:14,lineHeight:1.5,color:"rgba(255,255,255,0.84)"}}>Runden, Plaetze und Playing HCP an einem Ort.</div>
+              </div>
+              <div style={{padding:"14px 16px",borderRadius:"var(--border-radius-md)",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.12)"}}>
+                <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.68)",marginBottom:6}}>Berechnen</div>
+                <div style={{fontSize:14,lineHeight:1.5,color:"rgba(255,255,255,0.84)"}}>Differenziale, Trend und aktueller Index automatisch.</div>
+              </div>
+              <div style={{padding:"14px 16px",borderRadius:"var(--border-radius-md)",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.12)"}}>
+                <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.68)",marginBottom:6}}>Lokal</div>
+                <div style={{fontSize:14,lineHeight:1.5,color:"rgba(255,255,255,0.84)"}}>Nach dem ersten Laden hilft der Browser-Cache fuer schnellen Zugriff.</div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{...cardStyle,flex:"1 1 320px",minWidth:"min(100%, 320px)",padding:"20px 20px 24px",background:"linear-gradient(180deg, rgba(255,255,255,0.97) 0%, rgba(244,248,245,0.94) 100%)",color:"var(--color-text-primary)"}}>
+            <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Direkter Einstieg</div>
+            <div style={{fontSize:24,fontWeight:650,marginBottom:6}}>Kurz einrichten</div>
+            <div style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)",marginBottom:18}}>Name und Start-HCP eintragen, dann geht es direkt los.</div>
+            <ProfileForm profile={profile} onSave={onSave} isSetup/>
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:14,marginBottom:18}}>
+        <div style={featureCardStyle}>
+          <div style={{fontSize:13,fontWeight:700,color:"#1D9E75",letterSpacing:"0.04em",textTransform:"uppercase"}}>Runden</div>
+          <div style={{fontSize:20,fontWeight:650}}>Alles sauber erfasst</div>
+          <div style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)"}}>9 oder 18 Loch, Stableford oder Stroke Play.</div>
+        </div>
+        <div style={featureCardStyle}>
+          <div style={{fontSize:13,fontWeight:700,color:"#1D9E75",letterSpacing:"0.04em",textTransform:"uppercase"}}>HCP</div>
+          <div style={{fontSize:20,fontWeight:650}}>Nachvollziehbar berechnet</div>
+          <div style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)"}}>Du siehst direkt, was zaehlt und wie dein Index entsteht.</div>
+        </div>
+        <div style={featureCardStyle}>
+          <div style={{fontSize:13,fontWeight:700,color:"#1D9E75",letterSpacing:"0.04em",textTransform:"uppercase"}}>Simulator</div>
+          <div style={{fontSize:20,fontWeight:650}}>Vorher durchspielen</div>
+          <div style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)"}}>Teste kuenftige Runden und ihren Einfluss auf dein HCP.</div>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gap:12,marginBottom:18}}>
+        <div style={stepStyle}>
+          <div style={{width:32,height:32,borderRadius:999,background:"rgba(29,158,117,0.12)",color:"#1D9E75",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,flexShrink:0}}>1</div>
+          <div>
+            <div style={{fontSize:17,fontWeight:600,marginBottom:4}}>Profil und Plaetze anlegen</div>
+            <div style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)"}}>Start-HCP eintragen, Platzdaten hinterlegen.</div>
+          </div>
+        </div>
+        <div style={stepStyle}>
+          <div style={{width:32,height:32,borderRadius:999,background:"rgba(29,158,117,0.12)",color:"#1D9E75",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,flexShrink:0}}>2</div>
+          <div>
+            <div style={{fontSize:17,fontWeight:600,marginBottom:4}}>Runden speichern</div>
+            <div style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)"}}>Differenziale, Trend und Dashboard aktualisieren sich automatisch.</div>
+          </div>
+        </div>
+        <div style={stepStyle}>
+          <div style={{width:32,height:32,borderRadius:999,background:"rgba(29,158,117,0.12)",color:"#1D9E75",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,flexShrink:0}}>3</div>
+          <div>
+            <div style={{fontSize:17,fontWeight:600,marginBottom:4}}>Schnell wieder da</div>
+            <div style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)"}}>Der Browser-Cache haelt die App nach dem ersten Laden griffbereit.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [db, setDB] = useState(initDB);
   const [view, setView] = useState("dashboard");
@@ -1332,16 +1442,7 @@ export default function App() {
 
   const newRound = () => setForm({ date:new Date().toISOString().slice(0,10), mode:"Stableford", format:"Einzel", holes:18, submitted:false, markerSigned:false, nineHoleAllowed:false, playingHcp:displayHcp });
 
-  if (!db.profile.name) return (
-    <div style={{maxWidth:480,margin:"0 auto",padding:appShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
-      <div style={{...cardStyle,padding:"24px 24px 28px",background:"linear-gradient(145deg, rgba(20,46,37,0.96) 0%, rgba(18,57,44,0.92) 42%, rgba(29,158,117,0.78) 100%)",color:"#fff"}}>
-        <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",opacity:0.72,marginBottom:8}}>Personal Golf Office</div>
-        <div style={{fontSize:28,fontWeight:600,marginBottom:6}}>Golf HCP Tracker</div>
-        <div style={{fontSize:14,color:"rgba(255,255,255,0.74)",marginBottom:24}}>Einmalige Einrichtung – DGV · WHS</div>
-        <ProfileForm profile={db.profile} onSave={saveProfile} isSetup/>
-      </div>
-    </div>
-  );
+  if (!db.profile.name) return <LandingPage profile={db.profile} onSave={saveProfile}/>;
 
   return (
     <div style={{maxWidth:760,margin:"0 auto",padding:appShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
