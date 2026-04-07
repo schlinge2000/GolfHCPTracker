@@ -13,6 +13,8 @@ type PwaUpdateEvent = CustomEvent<{
 const TEES = ["Gelb","Weiß","Blau","Rot"];
 const MODES = ["Stableford","Stroke Play"];
 const FORMATS = ["Einzel","Vierer","Vierball"];
+const GITHUB_REPO_URL = "https://github.com/schlinge2000/GolfHCPTracker";
+const GITHUB_ISSUES_URL = "https://github.com/schlinge2000/GolfHCPTracker/issues";
 const COLORS = { hcp:"#1D9E75", stroke:"#378ADD", stableford:"#7F77DD", border:"var(--color-border-tertiary)", textSec:"var(--color-text-secondary)" };
 const inp: CSSProperties = { width:"100%", boxSizing:"border-box", padding:"10px 12px", borderRadius:"var(--border-radius-md)", border:"1px solid var(--color-border-secondary)", background:"rgba(255,255,255,0.9)", color:"var(--color-text-primary)", fontSize:14, fontFamily:"var(--font-sans)", boxShadow:"inset 0 1px 0 rgba(255,255,255,0.55)" };
 const sel = { ...inp };
@@ -68,11 +70,32 @@ function normalizeWhitespace(value) {
 }
 
 function parseGermanNumber(value) {
-  const raw = String(value ?? "").trim();
+  const raw = normalizeWhitespace(String(value ?? ""));
   if (!raw) return null;
-  const normalized = raw.includes(",")
-    ? raw.replace(/\./g, "").replace(",", ".")
-    : raw;
+
+  const tokenMatch = raw.match(/-?\d[\d.,]*/);
+  if (!tokenMatch) return null;
+
+  let token = tokenMatch[0].replace(/[.,]+$/, "");
+  if (!token) return null;
+
+  const lastComma = token.lastIndexOf(",");
+  const lastDot = token.lastIndexOf(".");
+  let normalized = token;
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    const decimalSeparator = lastComma > lastDot ? "," : ".";
+    const thousandsSeparator = decimalSeparator === "," ? "." : ",";
+    normalized = token.replace(new RegExp(`\\${thousandsSeparator}`, "g"), "").replace(decimalSeparator, ".");
+  } else if (lastComma >= 0) {
+    normalized = token.replace(",", ".");
+  } else if (lastDot >= 0) {
+    const fractionalDigits = token.length - lastDot - 1;
+    normalized = fractionalDigits > 0 && fractionalDigits <= 2
+      ? token
+      : token.replace(/\./g, "");
+  }
+
   const parsed = parseFloat(normalized);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -364,6 +387,19 @@ function mergeGolfDeImport(currentDb, importedRounds) {
       skippedRounds,
     },
   };
+}
+
+function replaceGolfDeImport(currentDb, importedRounds) {
+  const nextDb = normalizeDB({
+    profile: normalizeDB(currentDb).profile,
+    courses: [],
+    rounds: [],
+    simulatedRounds: [],
+    nextRoundId: 1,
+    nextCourseId: 1,
+  });
+
+  return mergeGolfDeImport(nextDb, importedRounds);
 }
 
 function initDB() {
@@ -1463,6 +1499,7 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTime
 function DataPortability({db, onJsonImport, onGolfDePdfImport}) {
   const [jsonStatus, setJsonStatus] = useState({ tone:"", message:"" });
   const [pdfStatus, setPdfStatus] = useState({ tone:"", message:"" });
+  const [pdfImportMode, setPdfImportMode] = useState("merge");
   const importCard = (title, description, actionLabel, accept, onChange, status, tone="neutral") => {
     const background = tone === "pdf"
       ? "linear-gradient(180deg, rgba(225,241,251,0.96) 0%, rgba(244,249,253,0.96) 100%)"
@@ -1516,8 +1553,9 @@ function DataPortability({db, onJsonImport, onGolfDePdfImport}) {
     try {
       const pdfText = await extractGolfDePdfText(file);
       const parsedRounds = parseGolfDeDetailedReport(pdfText);
-      const result = onGolfDePdfImport(parsedRounds);
+      const result = onGolfDePdfImport(parsedRounds, pdfImportMode);
       const parts = [`${result.importedRounds} Runde${result.importedRounds===1?"":"n"} importiert`];
+      if (pdfImportMode === "replace") parts.push("bestehende Daten ersetzt");
       if (result.createdCourses) parts.push(`${result.createdCourses} Platz/Plätze angelegt`);
       if (result.skippedRounds) parts.push(`${result.skippedRounds} Duplikat${result.skippedRounds===1?"":"e"} uebersprungen`);
       setPdfStatus({ tone:"success", message:parts.join(" · ") });
@@ -1565,6 +1603,17 @@ function DataPortability({db, onJsonImport, onGolfDePdfImport}) {
             pdfStatus,
             "pdf",
           )}
+        </div>
+        <div style={{marginTop:12,padding:"12px 14px",borderRadius:"var(--border-radius-md)",background:"rgba(12,68,124,0.06)",border:"1px solid rgba(12,68,124,0.12)"}}>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:8,color:"#0C447C"}}>golf.de Importmodus</div>
+          <label style={{display:"flex",alignItems:"flex-start",gap:10,fontSize:13,color:"var(--color-text-primary)",cursor:"pointer",marginBottom:8}}>
+            <input type="radio" name="pdf-import-mode" checked={pdfImportMode==="merge"} onChange={()=>setPdfImportMode("merge")} style={{marginTop:2}}/>
+            <span>Mit bestehenden Daten zusammenführen und nur neue Runden/Plätze ergänzen.</span>
+          </label>
+          <label style={{display:"flex",alignItems:"flex-start",gap:10,fontSize:13,color:"var(--color-text-primary)",cursor:"pointer"}}>
+            <input type="radio" name="pdf-import-mode" checked={pdfImportMode==="replace"} onChange={()=>setPdfImportMode("replace")} style={{marginTop:2}}/>
+            <span>Bestehende Runden, Plätze und Simulationen vor dem PDF-Import ersetzen. Das Profil bleibt erhalten.</span>
+          </label>
         </div>
       </div>
     </div>
@@ -1642,7 +1691,61 @@ function HcpInfo() {
           </div>
         ))}
       </>)}
+
+      {card(<>
+        {h("Feedback und Bugs")}
+        {p("Wenn dir ein Fehler auffaellt oder ein Import nicht sauber funktioniert, melde ihn bitte direkt im GitHub-Repository.")}
+        <a
+          href={GITHUB_ISSUES_URL}
+          target="_blank"
+          rel="noreferrer"
+          style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:"var(--border-radius-md)",background:"#E1F1FB",color:"#0C447C",textDecoration:"none",fontSize:13,fontWeight:600,border:"1px solid rgba(12,68,124,0.18)"}}
+        >
+          Bugs auf GitHub melden
+        </a>
+      </>)}
     </div>
+  );
+}
+
+function AppFooter() {
+  const year = new Date().getFullYear();
+  const linkStyle: CSSProperties = {
+    color: "#0C447C",
+    textDecoration: "none",
+    fontWeight: 600,
+  };
+
+  return (
+    <footer style={{...cardStyle,padding:"18px 20px",marginTop:24,background:"linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(241,245,242,0.95) 100%)"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))",gap:18}}>
+        <div>
+          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Golf HCP Tracker</div>
+          <div style={{fontSize:13,color:"var(--color-text-secondary)",lineHeight:1.6}}>
+            Lokaler Golf-Handicap-Tracker fuer Runden, Simulator und golf.de PDF-Import direkt im Browser.
+          </div>
+        </div>
+        <div>
+          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Support</div>
+          <div style={{fontSize:13,lineHeight:1.8}}>
+            <a href={GITHUB_ISSUES_URL} target="_blank" rel="noreferrer" style={linkStyle}>Bug auf GitHub melden</a>
+          </div>
+          <div style={{fontSize:13,lineHeight:1.8}}>
+            <a href={GITHUB_REPO_URL} target="_blank" rel="noreferrer" style={linkStyle}>Repository ansehen</a>
+          </div>
+        </div>
+        <div>
+          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Rechtliches</div>
+          <div style={{fontSize:13,color:"var(--color-text-secondary)",lineHeight:1.6}}>
+            Fuer eine oeffentlich bereitgestellte App in Deutschland brauchst du in vielen Faellen ein Impressum und oft auch eine Datenschutzerklaerung. Die konkreten Angaben muessen vom Betreiber ergaenzt werden.
+          </div>
+        </div>
+      </div>
+      <div style={{marginTop:16,paddingTop:14,borderTop:"1px solid var(--color-border-tertiary)",display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",fontSize:12,color:"var(--color-text-secondary)"}}>
+        <span>{year} Golf HCP Tracker</span>
+        <span>Feedback und Fehlermeldungen laufen ueber GitHub Issues.</span>
+      </div>
+    </footer>
   );
 }
 
@@ -1752,6 +1855,8 @@ function LandingPage({profile, onSave}) {
           </div>
         </div>
       </div>
+
+      <AppFooter/>
     </div>
   );
 }
@@ -1853,8 +1958,10 @@ export default function App() {
           saveDB(normalized);
           setDB(normalized);
         }}
-        onGolfDePdfImport={parsedRounds=>{
-          const result = mergeGolfDeImport(db, parsedRounds);
+        onGolfDePdfImport={(parsedRounds, mode)=>{
+          const result = mode === "replace"
+            ? replaceGolfDeImport(db, parsedRounds)
+            : mergeGolfDeImport(db, parsedRounds);
           saveDB(result.db);
           setDB(result.db);
           return result.summary;
@@ -1874,6 +1981,8 @@ export default function App() {
           <button onClick={()=>setDeleteConfirm(null)} style={{padding:"8px 16px",borderRadius:"var(--border-radius-md)",background:"transparent",border:`0.5px solid ${COLORS.border}`,cursor:"pointer",color:"var(--color-text-primary)"}}>Abbrechen</button>
         </div>
       </Modal>}
+
+      <AppFooter/>
     </div>
   );
 }
