@@ -225,11 +225,11 @@ function parseGolfDeDetailedReport(text) {
 
     const compact = line.split(/\s+/);
     if (compact.length < 8) return null;
-    const diffToken = compact.at(-1);
-    const gbeToken = compact.at(-2);
-    const artToken = compact.at(-3);
-    const holesToken = compact.at(-4);
-    const clubNumberToken = compact.at(-5);
+    const diffToken = compact[compact.length - 1];
+    const gbeToken = compact[compact.length - 2];
+    const artToken = compact[compact.length - 3];
+    const holesToken = compact[compact.length - 4];
+    const clubNumberToken = compact[compact.length - 5];
     const dateToken = compact[1];
     const roundNumberToken = compact[0];
     if (!/^[0-9]+$/.test(roundNumberToken || "") || !/^\d{2}\.\d{2}\.\d{4}$/.test(dateToken || "")) return null;
@@ -1715,6 +1715,12 @@ function HcpInfo() {
           Bugs auf GitHub melden
         </a>
       </>)}
+
+      {card(<>
+        {h("Datenschutz")}
+        {p("Die App speichert Runden, Plaetze und Profildaten lokal im Browser auf deinem Geraet. Es gibt keinen Login, keine Server-Synchronisation und kein eingebautes Tracking oder Analytics.")}
+        {p("Der aktuelle Stand ist als private, nicht-kommerzielle App gedacht und wird nicht ueber eine eigene oeffentlich auffindbare Domain vermarktet. Wenn sich Hosting, Tracking oder Datenfluesse spaeter aendern, muss der Datenschutzhinweis entsprechend angepasst werden.")}
+      </>)}
     </div>
   );
 }
@@ -1748,7 +1754,7 @@ function AppFooter() {
         <div>
           <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Rechtliches</div>
           <div style={{fontSize:13,color:"var(--color-text-secondary)",lineHeight:1.6}}>
-            Fuer eine oeffentlich bereitgestellte App in Deutschland brauchst du in vielen Faellen ein Impressum und oft auch eine Datenschutzerklaerung. Die konkreten Angaben muessen vom Betreiber ergaenzt werden.
+            Diese App ist derzeit als private, nicht-kommerzielle Anwendung gedacht, ohne eigene oeffentlich vermarktete Domain. Daten bleiben lokal im Browser; es gibt keinen Login und kein eingebautes Tracking. Wenn die App spaeter oeffentlich betrieben wird, muessen Impressum und Datenschutzhinweise erneut geprueft und ergaenzt werden.
           </div>
         </div>
       </div>
