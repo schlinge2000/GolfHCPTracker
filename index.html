@@ -10,13 +10,32 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
     <style>
+      :root {
+        --font-sans: "Aptos", "Segoe UI", "Helvetica Neue", sans-serif;
+        --color-text-primary: #18261f;
+        --color-text-secondary: #5d6b64;
+        --color-background-page: #edf1eb;
+        --color-background-secondary: #f6f8f5;
+        --color-border-secondary: rgba(27, 69, 55, 0.12);
+        --color-border-tertiary: rgba(27, 69, 55, 0.16);
+        --border-radius-md: 14px;
+        --border-radius-lg: 24px;
+        --shadow-soft: 0 12px 32px rgba(23, 35, 29, 0.08);
+        --shadow-card: 0 18px 44px rgba(23, 35, 29, 0.12);
+      }
+
       html, body, #root {
         min-height: 100%;
       }
 
       body {
         margin: 0;
-        background: #f5f4f0;
+        font-family: var(--font-sans);
+        color: var(--color-text-primary);
+        background:
+          radial-gradient(circle at top left, rgba(29, 158, 117, 0.18), transparent 32%),
+          radial-gradient(circle at top right, rgba(55, 138, 221, 0.12), transparent 28%),
+          linear-gradient(180deg, #f7faf7 0%, var(--color-background-page) 52%, #e7ece7 100%);
       }
     </style>
     <title>Golf HCP Tracker</title>

@@ -13,16 +13,52 @@ const TEES = ["Gelb","Weiß","Blau","Rot"];
 const MODES = ["Stableford","Stroke Play"];
 const FORMATS = ["Einzel","Vierer","Vierball"];
 const COLORS = { hcp:"#1D9E75", stroke:"#378ADD", stableford:"#7F77DD", border:"var(--color-border-tertiary)", textSec:"var(--color-text-secondary)" };
-const inp: CSSProperties = { width:"100%", boxSizing:"border-box", padding:"8px 10px", borderRadius:"var(--border-radius-md)", border:"0.5px solid var(--color-border-secondary)", background:"#ffffff", color:"#111", fontSize:14, fontFamily:"var(--font-sans)" };
+const inp: CSSProperties = { width:"100%", boxSizing:"border-box", padding:"10px 12px", borderRadius:"var(--border-radius-md)", border:"1px solid var(--color-border-secondary)", background:"rgba(255,255,255,0.9)", color:"var(--color-text-primary)", fontSize:14, fontFamily:"var(--font-sans)", boxShadow:"inset 0 1px 0 rgba(255,255,255,0.55)" };
 const sel = { ...inp };
 const appShellPadding = "max(1rem, calc(env(safe-area-inset-top) + 0.5rem)) max(1rem, calc(env(safe-area-inset-right) + 1rem)) calc(env(safe-area-inset-bottom) + 3rem) max(1rem, calc(env(safe-area-inset-left) + 1rem))";
+const cardStyle: CSSProperties = { background:"rgba(255,255,255,0.92)", border:"1px solid var(--color-border-tertiary)", borderRadius:"var(--border-radius-lg)", boxShadow:"var(--shadow-card)", backdropFilter:"blur(14px)" };
+const subtleCardStyle: CSSProperties = { background:"linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(246,248,245,0.95) 100%)", border:"1px solid var(--color-border-tertiary)", borderRadius:"var(--border-radius-md)", boxShadow:"var(--shadow-soft)" };
+
+function round3(value) {
+  return Math.round(value * 1000) / 1000;
+}
+
+function normalizeCourse(course) {
+  const factor = parseFloat(course?.nineHolePhcpFactor);
+  return {
+    ...course,
+    nineHolePhcpFactor: Number.isFinite(factor) && factor > 0 ? round3(factor) : 0.5,
+  };
+}
+
+function normalizeDB(data) {
+  const safe = data && typeof data === "object" ? data : {};
+  const courses = Array.isArray(safe.courses) ? safe.courses.map(normalizeCourse) : [];
+  const rounds = Array.isArray(safe.rounds) ? safe.rounds : [];
+  const simulatedRounds = Array.isArray(safe.simulatedRounds) ? safe.simulatedRounds : [];
+  const nextRoundId = Number.isFinite(safe.nextRoundId)
+    ? safe.nextRoundId
+    : [...rounds, ...simulatedRounds].reduce((maxId, round)=>Math.max(maxId, round.id || 0), 0) + 1;
+  const nextCourseId = Number.isFinite(safe.nextCourseId)
+    ? safe.nextCourseId
+    : courses.reduce((maxId, course)=>Math.max(maxId, course.id || 0), 0) + 1;
+
+  return {
+    courses,
+    rounds,
+    simulatedRounds,
+    profile: safe.profile || {name:"", startHcp:54},
+    nextRoundId,
+    nextCourseId,
+  };
+}
 
 function initDB() {
   try {
     const raw = localStorage.getItem("golf_hcp_db");
-    if (raw) { const p = JSON.parse(raw); if (!p.profile) p.profile = {name:"",startHcp:54}; return p; }
+    if (raw) return normalizeDB(JSON.parse(raw));
   } catch(e) {}
-  return { courses:[], rounds:[], profile:{name:"",startHcp:54}, nextRoundId:1, nextCourseId:1 };
+  return normalizeDB(null);
 }
 function saveDB(db) { try { localStorage.setItem("golf_hcp_db", JSON.stringify(db)); } catch(e) {} }
 
@@ -67,6 +103,62 @@ function calcExpectedNineHoleDiff(handicapIndex) {
   return round1(((base * 1.04) + 2.4) / 2);
 }
 
+function getNineHolePhcpFactor(course) {
+  const factor = parseFloat(course?.nineHolePhcpFactor);
+  return Number.isFinite(factor) && factor > 0 ? factor : 0.5;
+}
+
+function calcCourseHandicap(handicapIndex, courseRating, slopeRating, par) {
+  const hi = parseFloat(handicapIndex);
+  const cr = parseFloat(courseRating);
+  const sr = parseFloat(slopeRating);
+  const scorePar = parseInt(par);
+  if (!Number.isFinite(hi) || !Number.isFinite(cr) || !Number.isFinite(sr) || !Number.isFinite(scorePar)) return null;
+  return (hi * sr) / 113 + (cr - scorePar);
+}
+
+function calcPlayingHcpFromCourse(handicapIndex, course, holesOverride) {
+  const holes = parseInt(holesOverride ?? course?.holes) || 18;
+  const courseHandicap = calcCourseHandicap(handicapIndex, course?.courseRating, course?.slopeRating, course?.par);
+  if (courseHandicap===null) return null;
+  const factor = holes===9 ? getNineHolePhcpFactor(course) : 1;
+  return Math.max(0, Math.round(courseHandicap * factor));
+}
+
+function getAdjustedPlayingHcp(playingHcp) {
+  return parseFloat(playingHcp) || 0;
+}
+
+function calcAdjustedGrossFromStableford({par, playingHcp, holes, stablefordPoints}) {
+  const scorePar = parseInt(par) || (parseInt(holes)===9 ? 36 : 72);
+  const points = parseInt(stablefordPoints);
+  if (!Number.isFinite(points)) return null;
+  const adjustedPlayingHcp = getAdjustedPlayingHcp(playingHcp);
+  const stablefordBase = parseInt(holes)===9 ? 18 : 36;
+  return Math.round(scorePar + adjustedPlayingHcp + stablefordBase - points);
+}
+
+function buildProjectedHandicap({recentDiffs, currentHcp, round}) {
+  const diff = calcScoreDiff(round, currentHcp);
+  if (diff===null) return null;
+
+  const nextDiffs = [...recentDiffs, diff].slice(-20);
+  const nextHcp = calcHcp(nextDiffs);
+  const rule = getHandicapRule(nextDiffs.length);
+  const sortedEntries = nextDiffs.map((value, index)=>({value, index})).sort((a,b)=>a.value-b.value || a.index-b.index);
+  const countingEntries = sortedEntries.slice(0, rule.take);
+  const countingDiffs = countingEntries.map(entry=>entry.value);
+
+  return {
+    diff,
+    nextHcp,
+    nextDiffs,
+    rule,
+    countingDiffs,
+    wouldCount: countingEntries.some(entry=>entry.index===nextDiffs.length-1),
+  };
+}
+
 function calcScoreDiff(r, handicapIndexForNineHole) {
   const cr=parseFloat(r.courseRating), sr=parseFloat(r.slopeRating);
   const gross=getGrossScore(r);
@@ -86,18 +178,57 @@ function sortRoundsChronologically(a, b) {
   return (a.id||0) - (b.id||0);
 }
 
+function getNextDate(dateString) {
+  const base = dateString ? new Date(`${dateString}T12:00:00`) : new Date();
+  if (Number.isNaN(base.getTime())) return new Date().toISOString().slice(0,10);
+  base.setDate(base.getDate() + 1);
+  return base.toISOString().slice(0,10);
+}
+
+function getLatestRoundDate(rounds) {
+  return [...rounds]
+    .map(round=>round.date)
+    .filter(Boolean)
+    .sort()
+    .slice(-1)[0] || new Date().toISOString().slice(0,10);
+}
+
 function buildHandicapTimeline(rounds, startHcp) {
   const eligibleRounds = [...rounds].filter(isHcpEligible).sort(sortRoundsChronologically);
   const diffs = [];
   let currentHcp = Math.min(54, Math.max(0, parseFloat(startHcp) || 54));
 
   return eligibleRounds.map(round=>{
-    const diff = calcScoreDiff(round, currentHcp);
+    const preRoundHcp = currentHcp;
+    const diff = calcScoreDiff(round, preRoundHcp);
     if (diff===null) return null;
     diffs.push(diff);
     currentHcp = calcHcp(diffs) ?? currentHcp;
-    return { round, diff, hcpAfter: currentHcp, preRoundHcp: currentHcp };
+    return { round, diff, hcpAfter: currentHcp, preRoundHcp };
   }).filter(Boolean);
+}
+
+function deriveNineHolePhcpFactor(rounds, startHcp, courseId) {
+  if (!courseId) return null;
+  const timeline = buildHandicapTimeline(rounds, startHcp);
+  const factors = timeline
+    .filter(entry=>entry.round.courseId===courseId && parseInt(entry.round.holes)===9)
+    .map(entry=>{
+      const baseCourseHandicap = calcCourseHandicap(entry.preRoundHcp, entry.round.courseRating, entry.round.slopeRating, entry.round.par);
+      const playingHcp = parseFloat(entry.round.playingHcp);
+      if (!Number.isFinite(playingHcp) || !Number.isFinite(baseCourseHandicap) || !baseCourseHandicap) return null;
+      const factor = playingHcp / baseCourseHandicap;
+      return Number.isFinite(factor) && factor > 0 ? factor : null;
+    })
+    .filter(value=>value!==null);
+
+  if (!factors.length) return null;
+
+  const average = factors.reduce((sum, value)=>sum + value, 0) / factors.length;
+  return {
+    factor: round3(average),
+    sampleSize: factors.length,
+  };
 }
 
 function missingDiffReason(r) {
@@ -136,7 +267,7 @@ function field(label: string, children: ReactNode, hint?: string) {
 }
 
 function badge(label, bg, color) {
-  return <span style={{fontSize:11,fontWeight:500,padding:"2px 8px",borderRadius:6,background:bg,color,whiteSpace:"nowrap"}}>{label}</span>;
+  return <span style={{fontSize:11,fontWeight:600,padding:"4px 9px",borderRadius:999,border:"1px solid rgba(24,38,31,0.05)",background:bg,color,whiteSpace:"nowrap",letterSpacing:"0.01em"}}>{label}</span>;
 }
 
 function formatAdjustment(adj) {
@@ -144,74 +275,55 @@ function formatAdjustment(adj) {
   return adj > 0 ? `+${adj.toFixed(1)}` : adj.toFixed(1);
 }
 
-function HcpTooltip({displayHcp, estimatedHcp, roundCount, take, adjustment, countingDiffs}) {
+function HcpTooltip({displayHcp, estimatedHcp, roundCount, take, adjustment, countingDiffs, children}) {
   const [open, setOpen] = useState(false);
   const countingAverage = countingDiffs.length ? round1(countingDiffs.reduce((sum, diff)=>sum+diff,0) / countingDiffs.length) : null;
 
   return (
     <div
-      style={{position:"relative",display:"inline-flex",alignItems:"center",gap:6}}
+      style={{position:"relative",display:"inline-block"}}
       onMouseEnter={()=>setOpen(true)}
       onMouseLeave={()=>setOpen(false)}
     >
-      <button
-        type="button"
-        aria-label="HCP-Berechnung anzeigen"
-        onClick={()=>setOpen(prev=>!prev)}
-        style={{
-          width:18,
-          height:18,
-          borderRadius:"50%",
-          border:`0.5px solid ${COLORS.border}`,
-          background:"#fff",
-          color:COLORS.hcp,
-          fontSize:11,
-          fontWeight:700,
-          cursor:"pointer",
-          display:"inline-flex",
-          alignItems:"center",
-          justifyContent:"center",
-          padding:0,
-        }}
-      >
-        ?
-      </button>
+      <div onClick={()=>setOpen(prev=>!prev)} style={{cursor:"help"}}>
+        {children}
+      </div>
       {open && (
         <div
           style={{
             position:"absolute",
             top:"calc(100% + 8px)",
             right:0,
-            width:260,
-            background:"#fff",
-            border:`0.5px solid ${COLORS.border}`,
+            width:280,
+            background:"linear-gradient(180deg, rgba(18,33,27,0.98) 0%, rgba(24,44,35,0.96) 100%)",
+            border:"1px solid rgba(255,255,255,0.12)",
             borderRadius:"var(--border-radius-md)",
-            boxShadow:"0 8px 24px rgba(17, 17, 17, 0.12)",
-            padding:"12px 14px",
-            zIndex:20,
+            boxShadow:"0 18px 44px rgba(17, 17, 17, 0.28)",
+            padding:"14px 15px",
+            zIndex:30,
             textAlign:"left",
           }}
         >
-          <div style={{fontSize:12,fontWeight:600,color:"#111",marginBottom:8}}>Aktuelle HCP-Berechnung</div>
+          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.68)",marginBottom:8}}>Aktuelle HCP-Berechnung</div>
           {!estimatedHcp ? (
-            <div style={{fontSize:12,lineHeight:1.5,color:"var(--color-text-secondary)"}}>
+            <div style={{fontSize:12,lineHeight:1.55,color:"rgba(255,255,255,0.82)"}}>
               Noch keine HCP-wirksame Runde. Aktuell wird dein Start-HCP {displayHcp.toFixed(1)} angezeigt.
             </div>
           ) : (
             <>
-              <div style={{fontSize:12,lineHeight:1.5,color:"var(--color-text-secondary)",marginBottom:6}}>
+              <div style={{fontSize:12,lineHeight:1.55,color:"rgba(255,255,255,0.82)",marginBottom:6}}>
                 Von {roundCount} HCP-wirksamen Runden zählen aktuell {take} in die Berechnung.
               </div>
-              <div style={{fontSize:12,lineHeight:1.5,color:"var(--color-text-secondary)",marginBottom:6}}>
+              <div style={{fontSize:12,lineHeight:1.55,color:"rgba(255,255,255,0.82)",marginBottom:6}}>
                 WHS-Anpassung: {formatAdjustment(adjustment)}
               </div>
               {countingDiffs.length > 0 && (
-                <div style={{fontSize:12,lineHeight:1.5,color:"var(--color-text-secondary)",marginBottom:6}}>
+                <div style={{fontSize:12,lineHeight:1.55,color:"rgba(255,255,255,0.82)",marginBottom:6}}>
                   Zählende Differentials: {countingDiffs.map(diff=>diff.toFixed(1)).join(", ")}
                 </div>
               )}
               {countingAverage!==null && (
-                <div style={{fontSize:12,lineHeight:1.5,color:"#111"}}>
+                <div style={{fontSize:12,lineHeight:1.55,color:"#fff",fontWeight:600}}>
                   Ø {countingAverage.toFixed(1)} {adjustment ? `${adjustment > 0 ? "+" : ""}${adjustment.toFixed(1)}` : "+ 0,0"} = {displayHcp.toFixed(1)}
                 </div>
               )}
@@ -376,7 +488,7 @@ function Modal({title, children, onClose}) {
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:100,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"max(24px, calc(env(safe-area-inset-top) + 16px)) max(16px, calc(env(safe-area-inset-right) + 12px)) max(24px, calc(env(safe-area-inset-bottom) + 16px)) max(16px, calc(env(safe-area-inset-left) + 12px))",overflowY:"auto"}}
       onClick={e=>{if(e.target===e.currentTarget) onClose();}}>
-      <div style={{background:"#fff",borderRadius:"var(--border-radius-lg)",border:"0.5px solid var(--color-border-tertiary)",padding:"20px 24px",width:"100%",maxWidth:520}}>
+      <div style={{...cardStyle,padding:"20px 24px",width:"100%",maxWidth:520}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <div style={{fontWeight:500,fontSize:16,color:"#111"}}>{title}</div>
           <button onClick={onClose} style={{background:"transparent",border:"none",cursor:"pointer",fontSize:18,color:"#888",lineHeight:1}}>×</button>
@@ -387,7 +499,7 @@ function Modal({title, children, onClose}) {
   );
 }
 
-function ScoreChart({data}) {
+function ScoreChart({data, projectedStartIndex=null}) {
   const w=680,h=200,pad={t:16,r:20,b:32,l:44};
   const diffs=data.map(d=>d.diff).filter(x=>x!==null);
   if (!diffs.length) return null;
@@ -397,7 +509,10 @@ function ScoreChart({data}) {
   const sx=t=>tMax===tMin ? pad.l : pad.l+((t-tMin)/(tMax-tMin))*(w-pad.l-pad.r);
   const sy=v=>pad.t+((max-v)/(max-min))*(h-pad.t-pad.b);
   const visible=data.filter(d=>d.diff!==null);
-  const pts=visible.map(d=>`${sx(new Date(d.date).getTime())},${sy(d.diff)}`).join(" ");
+  const actualVisible = projectedStartIndex===null ? visible : visible.slice(0, projectedStartIndex);
+  const projectedVisible = projectedStartIndex===null ? [] : visible.slice(Math.max(0, projectedStartIndex-1));
+  const actualPts=actualVisible.map(d=>`${sx(new Date(d.date).getTime())},${sy(d.diff)}`).join(" ");
+  const projectedPts=projectedVisible.map(d=>`${sx(new Date(d.date).getTime())},${sy(d.diff)}`).join(" ");
   const fmt=t=>new Date(t).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"2-digit"});
   return (
     <svg viewBox={`0 0 ${w} ${h}`} style={{width:"100%",height:"auto",display:"block"}}>
@@ -407,9 +522,10 @@ function ScoreChart({data}) {
           <text x={pad.l-6} y={sy(v)+4} fontSize={10} textAnchor="end" fill="#888">{v}</text>
         </g>
       ))}
-      <polyline points={pts} fill="none" stroke={COLORS.hcp} strokeWidth={1.5}/>
+      {actualPts && <polyline points={actualPts} fill="none" stroke={COLORS.hcp} strokeWidth={1.5}/>}
+      {projectedPts && <polyline points={projectedPts} fill="none" stroke="#C56B1A" strokeWidth={1.5} strokeDasharray="5 4"/>}
       {visible.map((d,i)=>(
-        <circle key={i} cx={sx(new Date(d.date).getTime())} cy={sy(d.diff)} r={3} fill={d.mode==="Stableford"?COLORS.stableford:COLORS.stroke}/>
+        <circle key={i} cx={sx(new Date(d.date).getTime())} cy={sy(d.diff)} r={3} fill={projectedStartIndex!==null && i>=projectedStartIndex ? "#C56B1A" : d.mode==="Stableford"?COLORS.stableford:COLORS.stroke}/>
       ))}
       <text x={pad.l} y={h-4} fontSize={10} fill="#888">{fmt(tMin)}</text>
       {tMax!==tMin && <text x={w-pad.r} y={h-4} fontSize={10} textAnchor="end" fill="#888">{fmt(tMax)}</text>}
@@ -417,7 +533,7 @@ function ScoreChart({data}) {
   );
 }
 
-function HcpTrendChart({trend}) {
+function HcpTrendChart({trend, projectedStartIndex=null}) {
   const w=680,h=180,pad={t:16,r:20,b:28,l:44};
   const vals=trend.map(t=>t.hcp);
   const min=Math.min(...vals)-1, max=Math.max(...vals)+1;
@@ -425,7 +541,10 @@ function HcpTrendChart({trend}) {
   const tMin=Math.min(...dates), tMax=Math.max(...dates);
   const sx=t=>tMax===tMin ? pad.l : pad.l+((t-tMin)/(tMax-tMin))*(w-pad.l-pad.r);
   const sy=v=>pad.t+((max-v)/(max-min))*(h-pad.t-pad.b);
-  const pts=trend.map(t=>`${sx(new Date(t.date).getTime())},${sy(t.hcp)}`).join(" ");
+  const actualTrend = projectedStartIndex===null ? trend : trend.slice(0, projectedStartIndex);
+  const projectedTrend = projectedStartIndex===null ? [] : trend.slice(Math.max(0, projectedStartIndex-1));
+  const actualPts=actualTrend.map(t=>`${sx(new Date(t.date).getTime())},${sy(t.hcp)}`).join(" ");
+  const projectedPts=projectedTrend.map(t=>`${sx(new Date(t.date).getTime())},${sy(t.hcp)}`).join(" ");
   const fmt=t=>new Date(t).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"2-digit"});
   return (
     <svg viewBox={`0 0 ${w} ${h}`} style={{width:"100%",height:"auto",display:"block"}}>
@@ -435,15 +554,16 @@ function HcpTrendChart({trend}) {
           <text x={pad.l-6} y={sy(v)+4} fontSize={10} textAnchor="end" fill="#888">{v}</text>
         </g>
       ))}
-      <polyline points={pts} fill="none" stroke={COLORS.hcp} strokeWidth={2}/>
-      {trend.map((t,i)=><circle key={i} cx={sx(new Date(t.date).getTime())} cy={sy(t.hcp)} r={3} fill={COLORS.hcp}/>)}
+      {actualPts && <polyline points={actualPts} fill="none" stroke={COLORS.hcp} strokeWidth={2}/>}
+      {projectedPts && <polyline points={projectedPts} fill="none" stroke="#C56B1A" strokeWidth={2} strokeDasharray="6 4"/>}
+      {trend.map((t,i)=><circle key={i} cx={sx(new Date(t.date).getTime())} cy={sy(t.hcp)} r={3} fill={projectedStartIndex!==null && i>=projectedStartIndex ? "#C56B1A" : COLORS.hcp}/>)}
       <text x={pad.l} y={h-4} fontSize={10} fill="#888">{fmt(tMin)}</text>
       {tMax!==tMin && <text x={w-pad.r} y={h-4} fontSize={10} textAnchor="end" fill="#888">{fmt(tMax)}</text>}
     </svg>
   );
 }
 
-function HcpRoundsTable({rounds, diffByRoundId}) {
+function HcpRoundsTable({rounds, diffByRoundId, simulatedRoundIds=new Set()}) {
   const n = Math.min(rounds.length, 20);
   const take = n > 0 ? getHandicapRule(n).take : 0;
   const withDiffs = [...rounds].reverse().slice(0,20).map(r=>({r, diff:diffByRoundId.get(r.id) ?? null}));
@@ -465,11 +585,15 @@ function HcpRoundsTable({rounds, diffByRoundId}) {
         </div>
         {withDiffs.map(({r, diff}, i)=>{
           const counts = counting.has(r.id);
+          const simulated = simulatedRoundIds.has(r.id);
+          const background = simulated
+            ? counts ? "linear-gradient(180deg, #fff3e4 0%, #ffecd2 100%)" : i%2===0 ? "#fff8ef" : "#fff4e4"
+            : counts ? "#E1F5EE" : i%2===0 ? "#fff" : "var(--color-background-secondary)";
           return (
             <div key={r.id} style={{
               display:"grid",gridTemplateColumns:"1fr 60px 40px 90px",gap:8,
               padding:"8px 12px",alignItems:"center",
-              background: counts ? "#E1F5EE" : i%2===0 ? "#fff" : "var(--color-background-secondary)",
+              background,
               borderTop: i>0 ? "0.5px solid var(--color-border-tertiary)" : "none"
             }}>
               <div>
@@ -495,7 +619,7 @@ function ProfileForm({profile, onSave, isSetup=false}) {
   const [p, setP] = useState({name:profile.name||"", startHcp:profile.startHcp??54});
   const set = (k,v) => setP(prev=>({...prev,[k]:v}));
   return (
-    <div style={{background:"#fff",borderRadius:"var(--border-radius-lg)",border:"0.5px solid var(--color-border-tertiary)",padding:"20px 24px"}}>
+    <div style={{...cardStyle,padding:"20px 24px"}}>
       {isSetup && <p style={{fontSize:14,color:"var(--color-text-secondary)",marginBottom:16}}>Einmal einrichten – wird für alle Runden verwendet.</p>}
       {field("Dein Name", <input style={inp} value={p.name} onChange={e=>set("name",e.target.value)} placeholder="z.B. Max Mustermann"/>)}
       {field("Start-HCP Index", <input type="number" step="0.1" style={inp} value={p.startHcp} onChange={e=>set("startHcp",parseFloat(e.target.value))}/>, "(Standard: 54)")}
@@ -507,13 +631,19 @@ function ProfileForm({profile, onSave, isSetup=false}) {
   );
 }
 
-function RoundForm({initial, courses, onSave, onCancel}) {
+function RoundForm({initial, courses, currentHcp, onSave, onCancel}) {
   const [r, setR] = useState(initial);
   const set = (k,v) => setR(prev=>({...prev,[k]:v}));
   const eligible = isHcpEligible(r);
   const cr=parseFloat(r.courseRating), sr=parseFloat(r.slopeRating);
   const par=parseInt(r.par)||36, phcp=parseFloat(r.playingHcp)||0;
-  const phcpAdj = parseInt(r.holes)===9 ? Math.round(phcp/2) : phcp;
+  const selectedCourse = courses.find(x=>x.id===parseInt(r.courseId));
+  const phcpSuggestion = useMemo(()=>calcPlayingHcpFromCourse(currentHcp, {
+    courseRating:r.courseRating,
+    slopeRating:r.slopeRating,
+    par:r.par,
+    nineHolePhcpFactor:selectedCourse?.nineHolePhcpFactor,
+  }, r.holes), [currentHcp, r.courseRating, r.slopeRating, r.par, r.holes, selectedCourse?.nineHolePhcpFactor]);
 
   const prefill = c => setR(prev=>({...prev,courseId:c.id,courseName:c.name,courseRating:c.courseRating,slopeRating:c.slopeRating,par:c.par}));
 
@@ -526,12 +656,10 @@ function RoundForm({initial, courses, onSave, onCancel}) {
     }
     if (!final.courseName) return alert("Bitte Platzname angeben");
     if (final.gbe) final.gbe = parseInt(final.gbe);
-    const cr2=parseFloat(final.courseRating), sr2=parseFloat(final.slopeRating);
     const par2=parseInt(final.par)||36, phcp2=parseFloat(final.playingHcp)||0;
-    const phcp2Adj = parseInt(final.holes)===9 ? Math.round(phcp2/2) : phcp2;
     const pts2=parseInt(final.stablefordPoints);
-    if (final.mode==="Stableford" && cr2&&sr2&&pts2) {
-      final.adjustedGross = Math.round(cr2+(par2+phcp2Adj-pts2)*(sr2/113));
+    if (final.mode==="Stableford" && Number.isFinite(pts2)) {
+      final.adjustedGross = calcAdjustedGrossFromStableford({ par:par2, playingHcp:phcp2, holes:final.holes, stablefordPoints:pts2 });
     }
     onSave(final);
   };
@@ -562,7 +690,12 @@ function RoundForm({initial, courses, onSave, onCancel}) {
           <option value={18}>18 Loch</option>
           <option value={9}>9 Loch</option>
         </select>)}
-        {field("Playing HCP (Spielvorgabe)", <input type="number" step="0.1" style={inp} value={r.playingHcp||""} onChange={e=>set("playingHcp",parseFloat(e.target.value))} placeholder="31"/>)}
+        {field("Playing HCP (Spielvorgabe)", <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8}}>
+          <input type="number" step="0.1" style={inp} value={r.playingHcp||""} onChange={e=>set("playingHcp",parseFloat(e.target.value))} placeholder="31"/>
+          <button type="button" onClick={()=>phcpSuggestion!==null && set("playingHcp", phcpSuggestion)} style={{padding:"0 12px",borderRadius:"var(--border-radius-md)",border:"1px solid var(--color-border-secondary)",background:"rgba(255,255,255,0.92)",cursor:phcpSuggestion!==null?"pointer":"not-allowed",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,opacity:phcpSuggestion!==null?1:0.5}}>
+            Auto
+          </button>
+        </div>, phcpSuggestion!==null ? `Vorschlag aus HCP ${currentHcp.toFixed(1)}: ${phcpSuggestion}` : parseInt(r.holes)===9 ? "absolute Schlaege fuer 9 Loch" : undefined)}
       </div>
       {parseInt(r.holes)===9 && (
         <div style={{marginBottom:14}}>
@@ -574,13 +707,13 @@ function RoundForm({initial, courses, onSave, onCancel}) {
       )}
       {r.mode==="Stableford" && (()=>{
         const pts=parseInt(r.stablefordPoints);
-        const autoAGS=(cr&&sr&&pts)?Math.round(cr+(par+phcpAdj-pts)*(sr/113)):null;
+        const autoAGS=Number.isFinite(pts)?calcAdjustedGrossFromStableford({ par, playingHcp:phcp, holes:r.holes, stablefordPoints:pts }):null;
         return (
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             {field("Stableford Punkte", <input type="number" style={inp} value={r.stablefordPoints||""} onChange={e=>{
               const p=parseInt(e.target.value);
               const upd: Record<string, number>={stablefordPoints:p};
-              if(cr&&sr&&p) upd.adjustedGross=Math.round(cr+(par+phcpAdj-p)*(sr/113));
+              if(Number.isFinite(p)) upd.adjustedGross=calcAdjustedGrossFromStableford({ par, playingHcp:phcp, holes:r.holes, stablefordPoints:p });
               setR(prev=>({...prev,...upd}));
             }} placeholder="23"/>)}
             {field("AGS (berechnet)", <input type="number" style={{...inp,background:"#f8f8f8"}} value={r.adjustedGross||""} onChange={e=>set("adjustedGross",parseInt(e.target.value))}/>, autoAGS?"auto":"")}
@@ -618,9 +751,11 @@ function RoundForm({initial, courses, onSave, onCancel}) {
   );
 }
 
-function CourseForm({initial, onSave, onCancel}) {
-  const [c, setC] = useState(initial);
+function CourseForm({initial, rounds, startHcp, onSave, onCancel}) {
+  const [c, setC] = useState(normalizeCourse(initial));
   const set = (k,v) => setC(prev=>({...prev,[k]:v}));
+  const learnedFactor = useMemo(()=>deriveNineHolePhcpFactor(rounds, startHcp, c.id), [rounds, startHcp, c.id]);
+
   return (
     <div>
       {field("Platzname", <input style={inp} value={c.name||""} onChange={e=>set("name",e.target.value)} placeholder="GC Bergisch Land"/>)}
@@ -632,6 +767,12 @@ function CourseForm({initial, onSave, onCancel}) {
       {field("Abschlag / Tee", <select style={sel} value={c.tee||"Gelb"} onChange={e=>set("tee",e.target.value)}>
         {TEES.map(t=><option key={t}>{t}</option>)}
       </select>)}
+      {field("9-Loch PHCP-Faktor", <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8}}>
+        <input type="number" step="0.001" style={inp} value={c.nineHolePhcpFactor??0.5} onChange={e=>set("nineHolePhcpFactor", parseFloat(e.target.value))} placeholder="0.500"/>
+        <button type="button" onClick={()=>learnedFactor && set("nineHolePhcpFactor", learnedFactor.factor)} style={{padding:"0 12px",borderRadius:"var(--border-radius-md)",border:"1px solid var(--color-border-secondary)",background:"rgba(255,255,255,0.92)",cursor:learnedFactor?"pointer":"not-allowed",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,opacity:learnedFactor?1:0.5}}>
+          Ableiten
+        </button>
+      </div>, learnedFactor ? `aus ${learnedFactor.sampleSize} Runde${learnedFactor.sampleSize===1?"":"n"}: ${learnedFactor.factor}` : "9-Loch PHCP = Course Handicap × Faktor")}
       {field("Notizen", <textarea style={{...inp,resize:"vertical",minHeight:60}} value={c.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="z.B. Heimatplatz"/>)}
       <div style={{display:"flex",gap:8}}>
         <button onClick={()=>{if(!c.name) return alert("Name erforderlich"); onSave(c);}}
@@ -645,12 +786,18 @@ function CourseForm({initial, onSave, onCancel}) {
 function RoundRow({round:r, onEdit=()=>{}, onDelete=()=>{}, compact=false, counting=false, diffByRoundId}) {
   const status=hcpStatus(r);
   const diff=diffByRoundId.get(r.id) ?? null;
+  const simulated = Boolean(r.simulated);
+  const borderColor = simulated ? "rgba(197,107,26,0.34)" : counting ? "rgba(29,158,117,0.38)" : "var(--color-border-tertiary)";
+  const background = simulated
+    ? counting ? "linear-gradient(180deg, #fff1df 0%, #ffe7c5 100%)" : "linear-gradient(180deg, rgba(255,248,239,0.98) 0%, rgba(255,240,218,0.98) 100%)"
+    : counting ? "linear-gradient(180deg, #ecfbf4 0%, #e3f6ee 100%)" : "rgba(255,255,255,0.9)";
   return (
-    <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:"var(--border-radius-md)",border:`0.5px solid ${counting?"#1D9E75":"var(--color-border-tertiary)"}`,background:counting?"#E1F5EE":"#fff",marginBottom:8}}>
-      <div style={{width:10,height:10,borderRadius:"50%",background:status.dot,flexShrink:0}}/>
+    <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:"var(--border-radius-md)",border:`1px solid ${borderColor}`,background,boxShadow:"var(--shadow-soft)",marginBottom:10}}>
+      <div style={{width:10,height:10,borderRadius:"50%",background:simulated?"#C56B1A":status.dot,flexShrink:0}}/>
       <div style={{flex:1,minWidth:0}}>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <span style={{fontWeight:500,fontSize:14,color:"var(--color-text-primary)"}}>{r.courseName||"Unbekannter Platz"}</span>
+          {simulated && badge("Simulation", "#fff1df", "#9a5314")}
           {badge(r.mode,r.mode==="Stableford"?"#EEEDFE":"#E6F1FB",r.mode==="Stableford"?"#3C3489":"#0C447C")}
           {badge(status.label,status.dot==="#1D9E75"?"#E1F5EE":"#F1EFE8",status.dot==="#1D9E75"?"#085041":"#5F5E5A")}
         </div>
@@ -706,10 +853,10 @@ function CourseList({courses, onNew, onEdit}) {
       </div>
       {courses.length===0 && <div style={{color:"var(--color-text-secondary)",fontSize:14,padding:"24px 0"}}>Noch keine Plätze angelegt.</div>}
       {courses.map(c=>(
-        <div key={c.id} style={{padding:"10px 14px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-tertiary)",background:"#fff",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div key={c.id} style={{padding:"12px 14px",borderRadius:"var(--border-radius-md)",border:"1px solid var(--color-border-tertiary)",background:"rgba(255,255,255,0.9)",boxShadow:"var(--shadow-soft)",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <div>
             <div style={{fontWeight:500,fontSize:14,color:"var(--color-text-primary)"}}>{c.name}</div>
-            <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>CR {c.courseRating} · SR {c.slopeRating} · Par {c.par} · {c.tee}</div>
+            <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>CR {c.courseRating} · SR {c.slopeRating} · Par {c.par} · {c.tee} · 9L PHCP × {getNineHolePhcpFactor(c).toFixed(3)}</div>
           </div>
           <button onClick={()=>onEdit(c)} style={{padding:"4px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-tertiary)",background:"transparent",cursor:"pointer",fontSize:12,color:"var(--color-text-primary)"}}>Bearbeiten</button>
         </div>
@@ -718,36 +865,261 @@ function CourseList({courses, onNew, onEdit}) {
   );
 }
 
-function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTimeline, diffByRoundId}) {
-  const avgDiff = recentDiffs.length?(recentDiffs.reduce((s,d)=>s+d,0)/recentDiffs.length).toFixed(1):null;
-  const chartData = useMemo(()=>hcpTimeline.map((entry,i)=>({x:i+1,diff:entry.diff,mode:entry.round.mode,date:entry.round.date})),[hcpTimeline]);
-  const trendData = useMemo(()=>hcpTimeline.map((entry,i)=>({i:i+1,hcp:entry.hcpAfter,date:entry.round.date})),[hcpTimeline]);
+function SimulatorRoundForm({initial, courses, currentHcp, onSave, onCancel}) {
+  const [r, setR] = useState(initial);
+  const set = (k,v) => setR(prev=>({...prev,[k]:v}));
+  const cr=parseFloat(r.courseRating), sr=parseFloat(r.slopeRating);
+  const par=parseInt(r.par)||36, phcp=parseFloat(r.playingHcp)||0;
+  const selectedCourse = courses.find(x=>x.id===parseInt(r.courseId));
+  const phcpSuggestion = useMemo(()=>calcPlayingHcpFromCourse(currentHcp, {
+    courseRating:r.courseRating,
+    slopeRating:r.slopeRating,
+    par:r.par,
+    nineHolePhcpFactor:selectedCourse?.nineHolePhcpFactor,
+  }, r.holes), [currentHcp, r.courseRating, r.slopeRating, r.par, r.holes, selectedCourse?.nineHolePhcpFactor]);
+
+  const prefill = course => setR(prev=>({
+    ...prev,
+    courseId:course.id,
+    courseName:course.name,
+    courseRating:course.courseRating,
+    slopeRating:course.slopeRating,
+    par:course.par,
+    playingHcp:calcPlayingHcpFromCourse(currentHcp, course, prev.holes) ?? prev.playingHcp,
+  }));
+
+  const projectedGross = useMemo(()=>{
+    if (r.mode!=="Stableford") return parseInt(r.adjustedGross);
+    return calcAdjustedGrossFromStableford(r);
+  }, [r]);
+
+  const preview = useMemo(()=>{
+    if (!projectedGross) return null;
+    const simulation = buildProjectedHandicap({
+      recentDiffs:initial.recentDiffs || [],
+      currentHcp,
+      round:{
+        holes:r.holes,
+        mode:r.mode,
+        courseRating:r.courseRating,
+        slopeRating:r.slopeRating,
+        par:r.par,
+        playingHcp:r.playingHcp,
+        adjustedGross:projectedGross,
+      }
+    });
+    return simulation;
+  }, [initial.recentDiffs, currentHcp, r, projectedGross]);
+
+  const handleSave = () => {
+    if (!r.date) return alert("Datum erforderlich");
+    if (!r.courseName) return alert("Bitte Platzname angeben");
+    const final = {...r};
+    if (final.courseId) {
+      const c = courses.find(x=>x.id===parseInt(final.courseId));
+      if (c) {
+        final.courseName=c.name;
+        final.courseRating=c.courseRating;
+        final.slopeRating=c.slopeRating;
+        final.par=c.par;
+      }
+    }
+    if (final.mode==="Stableford" && projectedGross) final.adjustedGross = projectedGross;
+    onSave(final);
+  };
 
   return (
     <div>
+      {field("Datum", <input type="date" style={inp} value={r.date||""} onChange={e=>set("date",e.target.value)}/>)}
+      {field("Platz aus Datenbank", <select style={sel} value={r.courseId||""} onChange={e=>{const c=courses.find(x=>x.id===parseInt(e.target.value)); if (c) prefill(c);}}>
+        <option value="">– waehlen oder manuell –</option>
+        {courses.map(c=><option key={c.id} value={c.id}>{c.name} (CR {c.courseRating} / SR {c.slopeRating})</option>)}
+      </select>)}
+      {field("Platzname", <input style={inp} value={r.courseName||""} onChange={e=>set("courseName",e.target.value)} placeholder="z.B. Pulheim City"/>)}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+        {field("Course Rating", <input type="number" step="0.1" style={inp} value={r.courseRating||""} onChange={e=>set("courseRating",parseFloat(e.target.value))} placeholder="30.1"/>)}
+        {field("Slope Rating", <input type="number" style={inp} value={r.slopeRating||""} onChange={e=>set("slopeRating",parseInt(e.target.value))} placeholder="100"/>)}
+        {field("Par", <input type="number" style={inp} value={r.par||""} onChange={e=>set("par",parseInt(e.target.value))} placeholder="32"/>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {field("Loecher", <select style={sel} value={r.holes} onChange={e=>set("holes", parseInt(e.target.value))}>
+          <option value={9}>9 Loch</option>
+          <option value={18}>18 Loch</option>
+        </select>)}
+        {field("Wertung", <select style={sel} value={r.mode} onChange={e=>set("mode", e.target.value)}>
+          <option value="Stableford">Stableford</option>
+          <option value="Stroke Play">Zaehspiel</option>
+        </select>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8}}>
+        <div>{field("Playing HCP", <input type="number" step="0.1" style={inp} value={r.playingHcp||""} onChange={e=>set("playingHcp",parseFloat(e.target.value))} placeholder={currentHcp.toFixed(1)}/>, phcpSuggestion!==null ? `Vorschlag aus HCP ${currentHcp.toFixed(1)}: ${phcpSuggestion}` : r.holes===9 ? "absolute Schlaege fuer 9 Loch" : undefined)}</div>
+        <button type="button" onClick={()=>phcpSuggestion!==null && set("playingHcp", phcpSuggestion)} style={{height:40,alignSelf:"end",padding:"0 12px",borderRadius:"var(--border-radius-md)",border:"1px solid var(--color-border-secondary)",background:"rgba(255,255,255,0.92)",cursor:phcpSuggestion!==null?"pointer":"not-allowed",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,opacity:phcpSuggestion!==null?1:0.5}}>
+          Auto
+        </button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10,marginBottom:16}}>
+        {r.mode==="Stableford"
+          ? field(r.holes===9 ? "Stableford Punkte (9 Loch)" : "Stableford Punkte", <input type="number" style={inp} value={r.stablefordPoints||""} onChange={e=>set("stablefordPoints", parseInt(e.target.value))} placeholder={r.holes===9 ? "22" : "34"}/>)
+          : field("AGS / Netto-Brutto", <input type="number" style={inp} value={r.adjustedGross||""} onChange={e=>set("adjustedGross", parseInt(e.target.value))} placeholder={r.holes===9 ? "48" : "95"}/>)}
+        {field("Berechneter AGS", <input type="number" style={{...inp,background:"#f8f8f8"}} value={projectedGross ?? ""} readOnly/>, r.mode==="Stableford" ? "auto" : "manuell")}
+      </div>
+      {preview && (
+        <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:16,border:"1px solid rgba(197,107,26,0.26)",background:"linear-gradient(180deg, #fff9f2 0%, #fff1df 100%)"}}>
+          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"#9a5314",marginBottom:8}}>Vorschau</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
+            <div><div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Differential</div><div style={{fontSize:22,fontWeight:600}}>{preview.diff.toFixed(1)}</div></div>
+            <div><div style={{fontSize:12,color:"var(--color-text-secondary)"}}>HCP danach</div><div style={{fontSize:22,fontWeight:600,color:COLORS.hcp}}>{preview.nextHcp.toFixed(1)}</div></div>
+            <div><div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Zaehlt?</div><div style={{fontSize:16,fontWeight:600,color:preview.wouldCount ? "#085041" : "#9a5314"}}>{preview.wouldCount ? "Ja" : "Eher nicht"}</div></div>
+          </div>
+        </div>
+      )}
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={handleSave} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:500,fontSize:14}}>Simulationsrunde hinzufügen</button>
+        <button onClick={onCancel} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:"0.5px solid var(--color-border-tertiary)",cursor:"pointer",fontSize:14,color:"var(--color-text-primary)"}}>Abbrechen</button>
+      </div>
+    </div>
+  );
+}
+
+function HcpSimulator({courses, rounds, startHcp, simulatedRounds, onAddRound, onDeleteRound, onClearRounds}) {
+  const [simForm, setSimForm] = useState(null);
+
+  const actualTimeline = useMemo(()=>buildHandicapTimeline(rounds, startHcp), [rounds, startHcp]);
+  const combinedRounds = useMemo(()=>[...rounds, ...simulatedRounds], [rounds, simulatedRounds]);
+  const combinedTimeline = useMemo(()=>buildHandicapTimeline(combinedRounds, startHcp), [combinedRounds, startHcp]);
+  const combinedSortedRounds = useMemo(()=>[...combinedRounds].sort((a,b)=>b.date.localeCompare(a.date) || (b.createdAt||"").localeCompare(a.createdAt||"") || (b.id||0)-(a.id||0)), [combinedRounds]);
+  const combinedHcpRounds = useMemo(()=>combinedSortedRounds.filter(isHcpEligible), [combinedSortedRounds]);
+  const recentTimeline = useMemo(()=>combinedTimeline.slice(-20), [combinedTimeline]);
+  const recentDiffs = useMemo(()=>recentTimeline.map(entry=>entry.diff), [recentTimeline]);
+  const scenarioHcp = useMemo(()=>combinedTimeline.length ? combinedTimeline[combinedTimeline.length-1].hcpAfter : (startHcp ?? 54), [combinedTimeline, startHcp]);
+  const diffByRoundId = useMemo(()=>new Map(combinedTimeline.map(entry=>[entry.round.id, entry.diff])), [combinedTimeline]);
+  const simulatedRoundIds = useMemo(()=>new Set(simulatedRounds.map(round=>round.id)), [simulatedRounds]);
+  const projectedStartIndex = actualTimeline.length;
+
+  const openDialog = () => {
+    const nextDate = getNextDate(getLatestRoundDate(combinedRounds));
+    setSimForm({
+      id:null,
+      date:nextDate,
+      mode:"Stableford",
+      format:"Einzel",
+      holes:9,
+      submitted:true,
+      markerSigned:true,
+      nineHoleAllowed:true,
+      playingHcp:scenarioHcp,
+      courseId:"",
+      courseName:"",
+      courseRating:"",
+      slopeRating:"",
+      par:32,
+      stablefordPoints:"",
+      adjustedGross:"",
+      recentDiffs,
+    });
+  };
+
+  const saveScenarioRound = round => {
+    onAddRound({
+      ...round,
+      simulated:true,
+      createdAt:new Date().toISOString(),
+      submitted:true,
+      markerSigned:true,
+      format:"Einzel",
+      nineHoleAllowed:parseInt(round.holes)===9 ? true : false,
+    });
+    setSimForm(null);
+  };
+
+  const scenarioDelta = round1(scenarioHcp - (actualTimeline.length ? actualTimeline[actualTimeline.length-1].hcpAfter : (startHcp ?? 54)));
+
+  return (
+    <div>
+      <div style={{...cardStyle,padding:"20px 24px",marginBottom:20,position:"relative",overflow:"hidden",background:"linear-gradient(145deg, rgba(255,248,239,0.98) 0%, rgba(255,241,223,0.98) 100%)",border:"1px solid rgba(197,107,26,0.24)"}}>
+        <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at top right, rgba(197,107,26,0.12), transparent 30%)",pointerEvents:"none"}}/>
+        <div style={{position:"relative",display:"flex",justifyContent:"space-between",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#9a5314",marginBottom:6}}>Scenario Lab</div>
+            <div style={{fontSize:24,fontWeight:600,color:"#2f2011",marginBottom:6}}>Mehrere Runden hintereinander simulieren</div>
+            <div style={{fontSize:13,color:"#6f5841",maxWidth:520,lineHeight:1.6}}>
+              Fuege einzelne Zukunftsrunden nacheinander hinzu. Die Statistiken, Tabellen und Charts laufen danach direkt weiter und zeigen die simulierten Runden in Orange.
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={openDialog} style={{padding:"9px 16px",borderRadius:"var(--border-radius-md)",background:"#C56B1A",color:"#fff",border:"none",cursor:"pointer",fontWeight:600,fontSize:14}}>+ Runde simulieren</button>
+            <button onClick={onClearRounds} style={{padding:"9px 16px",borderRadius:"var(--border-radius-md)",background:"transparent",border:"1px solid rgba(197,107,26,0.28)",color:"#9a5314",cursor:simulatedRounds.length?"pointer":"not-allowed",opacity:simulatedRounds.length?1:0.5,fontSize:14}}>Szenario leeren</button>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginTop:18}}>
+          <div style={{...subtleCardStyle,padding:"12px 14px",background:"rgba(255,255,255,0.72)"}}><div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:4}}>Simulierte Runden</div><div style={{fontSize:24,fontWeight:600,color:"#2f2011"}}>{simulatedRounds.length}</div></div>
+          <div style={{...subtleCardStyle,padding:"12px 14px",background:"rgba(255,255,255,0.72)"}}><div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:4}}>HCP im Szenario</div><div style={{fontSize:24,fontWeight:600,color:COLORS.hcp}}>{scenarioHcp.toFixed(1)}</div></div>
+          <div style={{...subtleCardStyle,padding:"12px 14px",background:"rgba(255,255,255,0.72)"}}><div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:4}}>Aenderung</div><div style={{fontSize:24,fontWeight:600,color:scenarioDelta<0 ? COLORS.hcp : "#2f2011"}}>{`${scenarioDelta > 0 ? "+" : ""}${scenarioDelta.toFixed(1)}`}</div></div>
+        </div>
+      </div>
+
+      <Dashboard
+        rounds={combinedSortedRounds}
+        hcpRounds={combinedHcpRounds}
+        recentDiffs={recentDiffs}
+        estimatedHcp={scenarioHcp}
+        onNew={openDialog}
+        hcpTimeline={combinedTimeline}
+        diffByRoundId={diffByRoundId}
+        projectedStartIndex={simulatedRounds.length ? projectedStartIndex : null}
+        simulatedRoundIds={simulatedRoundIds}
+        title="Szenario-Dashboard"
+        recentTitle="Letzte echte und simulierte Runden"
+        actionArea={simulatedRounds.length ? (
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>Simulierte Runden bearbeiten</div>
+            {simulatedRounds.map(round=><RoundRow key={round.id} round={round} onDelete={()=>onDeleteRound(round.id)} diffByRoundId={diffByRoundId}/>)}
+          </div>
+        ) : null}
+        emptyText="Lege die erste Simulationsrunde an, dann laeuft das Dashboard direkt in die Zukunft weiter."
+      />
+
+      {simForm && <Modal title="Simulationsrunde hinzufuegen" onClose={()=>setSimForm(null)}><SimulatorRoundForm initial={simForm} courses={courses} currentHcp={scenarioHcp} onSave={saveScenarioRound} onCancel={()=>setSimForm(null)}/></Modal>}
+    </div>
+  );
+}
+
+function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTimeline, diffByRoundId, projectedStartIndex=null, simulatedRoundIds=new Set(), title=null, recentTitle="Letzte Runden", actionArea=null, emptyText="Noch keine Runden erfasst"}) {
+  const avgDiff = recentDiffs.length?(recentDiffs.reduce((s,d)=>s+d,0)/recentDiffs.length).toFixed(1):null;
+  const chartData = useMemo(()=>hcpTimeline.map((entry,i)=>({x:i+1,diff:entry.diff,mode:entry.round.mode,date:entry.round.date})),[hcpTimeline]);
+  const trendData = useMemo(()=>hcpTimeline.map((entry,i)=>({i:i+1,hcp:entry.hcpAfter,date:entry.round.date})),[hcpTimeline]);
+  const summaryCards = [["Runden gesamt",rounds.length],["HCP-wirksam",hcpRounds.length],["Ø Differenzial",avgDiff??"–"],["Bestes Diff",recentDiffs.length?Math.min(...recentDiffs).toFixed(1):"–"]];
+  if (simulatedRoundIds.size) summaryCards.push(["Simuliert", simulatedRoundIds.size]);
+
+  return (
+    <div>
+      {title && <div style={{fontSize:18,fontWeight:600,marginBottom:14,color:"var(--color-text-primary)"}}>{title}</div>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:12,marginBottom:24}}>
-        {[["Runden gesamt",rounds.length],["HCP-wirksam",hcpRounds.length],["Ø Differenzial",avgDiff??"–"],["Bestes Diff",recentDiffs.length?Math.min(...recentDiffs).toFixed(1):"–"]].map(([label,val])=>(
-          <div key={label} style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px"}}>
+        {summaryCards.map(([label,val])=>(
+          <div key={label} style={{...subtleCardStyle,padding:"14px 16px",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:label==="Bestes Diff"?COLORS.stroke:label==="Ø Differenzial"?COLORS.stableford:label==="Simuliert"?"#C56B1A":COLORS.hcp,opacity:0.8}}/>
             <div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:4}}>{label}</div>
             <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)"}}>{val}</div>
           </div>
         ))}
       </div>
 
-      {hcpRounds.length>0 && <HcpRoundsTable rounds={hcpRounds} diffByRoundId={diffByRoundId}/>}
+      {actionArea}
+
+      {hcpRounds.length>0 && <HcpRoundsTable rounds={hcpRounds} diffByRoundId={diffByRoundId} simulatedRoundIds={simulatedRoundIds}/>}
 
       {(chartData.length>0 || trendData.length>=2) && (
         <div style={{display:"grid",gridTemplateColumns:trendData.length>=2&&chartData.length>0?"1fr 1fr":"1fr",gap:16,marginBottom:24}}>
           {chartData.length>0 && (
             <div>
               <div style={{fontSize:14,fontWeight:500,marginBottom:12}}>Score Differenzials</div>
-              <ScoreChart data={chartData}/>
+              <ScoreChart data={chartData} projectedStartIndex={projectedStartIndex}/>
             </div>
           )}
           {trendData.length>=2 && (
             <div>
               <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>HCP-Entwicklung</div>
-              <HcpTrendChart trend={trendData}/>
+              <HcpTrendChart trend={trendData} projectedStartIndex={projectedStartIndex}/>
             </div>
           )}
         </div>
@@ -756,13 +1128,13 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTime
       {rounds.length===0 ? (
         <div style={{textAlign:"center",padding:"40px 0",color:"var(--color-text-secondary)"}}>
           <div style={{fontSize:32,marginBottom:12}}>⛳</div>
-          <div style={{fontSize:15,marginBottom:16}}>Noch keine Runden erfasst</div>
+          <div style={{fontSize:15,marginBottom:16}}>{emptyText}</div>
           <button onClick={onNew} style={{padding:"10px 20px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:500,fontSize:14}}>Erste Runde erfassen</button>
         </div>
       ) : (
         <div>
-          <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>Letzte Runden</div>
-          {rounds.slice(0,5).map(r=><RoundRow key={r.id} round={r} compact diffByRoundId={diffByRoundId}/>)}
+          <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>{recentTitle}</div>
+          {rounds.slice(0,8).map(r=><RoundRow key={r.id} round={r} compact diffByRoundId={diffByRoundId}/>)}
         </div>
       )}
     </div>
@@ -811,7 +1183,7 @@ function DataPortability({db, onImport}) {
   );
 
   return (
-    <div style={{background:"#fff",borderRadius:"var(--border-radius-lg)",border:"0.5px solid var(--color-border-tertiary)",padding:"20px 24px"}}>
+    <div style={{...cardStyle,padding:"20px 24px"}}>
       <div style={{marginBottom:24}}>
         <div style={{fontSize:14,fontWeight:500,marginBottom:6}}>Export</div>
         <div style={{fontSize:13,color:"var(--color-text-secondary)",marginBottom:12}}>
@@ -838,7 +1210,7 @@ function DataPortability({db, onImport}) {
 
 function HcpInfo() {
   const card = (children) => (
-    <div style={{background:"#fff",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"16px 20px",marginBottom:14}}>
+    <div style={{...cardStyle,padding:"16px 20px",marginBottom:14}}>
       {children}
     </div>
   );
@@ -920,12 +1292,15 @@ export default function App() {
 
   useEffect(()=>saveDB(db),[db]);
 
-  const updateDB = fn => setDB(prev=>{ const next=fn({...prev}); saveDB(next); return next; });
+  const updateDB = fn => setDB(prev=>{ const next=normalizeDB(fn({...prev})); saveDB(next); return next; });
 
   const saveRound = r => { updateDB(db=>{ if(r.id) db.rounds=db.rounds.map(x=>x.id===r.id?r:x); else { r.id=db.nextRoundId++; r.createdAt=new Date().toISOString(); db.rounds=[...db.rounds,r]; } return db; }); setForm(null); };
   const saveCourse = c => { updateDB(db=>{ if(c.id) db.courses=db.courses.map(x=>x.id===c.id?c:x); else { c.id=db.nextCourseId++; db.courses=[...db.courses,c]; } return db; }); setCourseForm(null); };
+  const saveSimulatedRound = r => updateDB(db=>{ if(r.id) db.simulatedRounds=db.simulatedRounds.map(x=>x.id===r.id?r:x); else { r.id=db.nextRoundId++; db.simulatedRounds=[...db.simulatedRounds,r]; } return db; });
   const saveProfile = p => updateDB(db=>{ db.profile=p; return db; });
   const deleteRound = id => { updateDB(db=>{ db.rounds=db.rounds.filter(r=>r.id!==id); return db; }); setDeleteConfirm(null); };
+  const deleteSimulatedRound = id => updateDB(db=>{ db.simulatedRounds=db.simulatedRounds.filter(r=>r.id!==id); return db; });
+  const clearSimulatedRounds = () => updateDB(db=>{ db.simulatedRounds=[]; return db; });
 
   const sortedRounds = useMemo(()=>[...db.rounds].sort((a,b)=>b.date.localeCompare(a.date)),[db.rounds]);
   const hcpTimeline = useMemo(()=>buildHandicapTimeline(db.rounds, db.profile.startHcp ?? 54),[db.rounds, db.profile.startHcp]);
@@ -959,45 +1334,53 @@ export default function App() {
 
   if (!db.profile.name) return (
     <div style={{maxWidth:480,margin:"0 auto",padding:appShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
-      <div style={{fontSize:20,fontWeight:500,marginBottom:4}}>Golf HCP Tracker</div>
-      <div style={{fontSize:13,color:COLORS.textSec,marginBottom:24}}>Einmalige Einrichtung – DGV · WHS</div>
-      <ProfileForm profile={db.profile} onSave={saveProfile} isSetup/>
+      <div style={{...cardStyle,padding:"24px 24px 28px",background:"linear-gradient(145deg, rgba(20,46,37,0.96) 0%, rgba(18,57,44,0.92) 42%, rgba(29,158,117,0.78) 100%)",color:"#fff"}}>
+        <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",opacity:0.72,marginBottom:8}}>Personal Golf Office</div>
+        <div style={{fontSize:28,fontWeight:600,marginBottom:6}}>Golf HCP Tracker</div>
+        <div style={{fontSize:14,color:"rgba(255,255,255,0.74)",marginBottom:24}}>Einmalige Einrichtung – DGV · WHS</div>
+        <ProfileForm profile={db.profile} onSave={saveProfile} isSetup/>
+      </div>
     </div>
   );
 
   return (
     <div style={{maxWidth:760,margin:"0 auto",padding:appShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,gap:12,flexWrap:"wrap"}}>
+      <div style={{...cardStyle,display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:18,gap:16,flexWrap:"wrap",padding:"22px 24px",background:"linear-gradient(140deg, rgba(20,46,37,0.96) 0%, rgba(18,57,44,0.94) 45%, rgba(29,158,117,0.76) 100%)",color:"#fff",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at top right, rgba(255,255,255,0.16), transparent 28%), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)",backgroundSize:"auto, 24px 24px",opacity:0.4,pointerEvents:"none"}}/>
         <div>
-          <div style={{fontSize:20,fontWeight:500}}>Golf HCP Tracker</div>
-          <div style={{fontSize:13,color:COLORS.textSec}}>{db.profile.name} · DGV · WHS</div>
+          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",opacity:0.72,marginBottom:8}}>Personal Golf Office</div>
+          <div style={{fontSize:28,fontWeight:600,marginBottom:6}}>Golf HCP Tracker</div>
+          <div style={{fontSize:14,color:"rgba(255,255,255,0.72)"}}>{db.profile.name} · DGV · WHS</div>
         </div>
-        <div style={{textAlign:"right",marginLeft:"auto",minWidth:140}}>
-          <div style={{fontSize:11,color:COLORS.textSec,display:"inline-flex",alignItems:"center",gap:6}}>
-            <span>{estimatedHcp?"Aktueller HCP Index":"Start-HCP"}</span>
-            <HcpTooltip
+        <div style={{textAlign:"right",marginLeft:"auto",minWidth:180,position:"relative"}}>
+          <HcpTooltip
               displayHcp={displayHcp}
               estimatedHcp={estimatedHcp}
               roundCount={recentTimeline.length}
               take={hcpRule?.take ?? 0}
               adjustment={hcpRule?.adj ?? 0}
               countingDiffs={countingDiffs}
-            />
-          </div>
-          <div style={{fontSize:36,fontWeight:500,color:COLORS.hcp,lineHeight:1.1}}>{displayHcp}</div>
-          <div style={{fontSize:11,color:COLORS.textSec}}>{estimatedHcp?`aus ${Math.min(hcpRounds.length,20)} HCP-wirks. Runden`:"noch keine gewerteten Runden"}</div>
+            >
+            <div style={{display:"inline-flex",alignItems:"center",justifyContent:"flex-end",gap:6,marginBottom:4}}>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.68)"}}>{estimatedHcp?"Aktueller HCP Index":"Start-HCP"}</span>
+              <span style={{width:18,height:18,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.22)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:11,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>?</span>
+            </div>
+            <div style={{fontSize:44,fontWeight:700,color:"#fff",lineHeight:1}}>{displayHcp}</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,0.68)",marginTop:6}}>{estimatedHcp?`aus ${Math.min(hcpRounds.length,20)} HCP-wirks. Runden`:"noch keine gewerteten Runden"}</div>
+          </HcpTooltip>
         </div>
       </div>
 
-      <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:`0.5px solid ${COLORS.border}`,paddingBottom:6,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none"}}>
-        {[["dashboard","Dashboard"],["rounds","Runden"],["courses","Plätze"],["profile","Profil"],["data","Daten"],["info","HCP-Info"]].map(([id,label])=>(
-          <button key={id} onClick={()=>setView(id)} style={{padding:"6px 14px",borderRadius:"var(--border-radius-md)",background:view===id?COLORS.hcp:"transparent",color:view===id?"#fff":COLORS.textSec,border:"none",cursor:"pointer",fontWeight:view===id?500:400,fontSize:14,whiteSpace:"nowrap",flexShrink:0}}>{label}</button>
+      <div style={{display:"flex",gap:6,marginBottom:22,padding:"8px",background:"rgba(255,255,255,0.7)",border:"1px solid var(--color-border-tertiary)",borderRadius:"18px",boxShadow:"var(--shadow-soft)",overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",backdropFilter:"blur(12px)"}}>
+        {[["dashboard","Dashboard"],["simulator","Simulator"],["rounds","Runden"],["courses","Plätze"],["profile","Profil"],["data","Daten"],["info","HCP-Info"]].map(([id,label])=>(
+          <button key={id} onClick={()=>setView(id)} style={{padding:"8px 14px",borderRadius:"12px",background:view===id?"linear-gradient(135deg, #1D9E75 0%, #14684f 100%)":"transparent",color:view===id?"#fff":COLORS.textSec,border:"none",cursor:"pointer",fontWeight:view===id?600:500,fontSize:14,whiteSpace:"nowrap",flexShrink:0,boxShadow:view===id?"0 10px 20px rgba(29,158,117,0.22)":"none"}}>{label}</button>
         ))}
       </div>
 
       {view==="dashboard" && <Dashboard rounds={sortedRounds} hcpRounds={hcpRounds} recentDiffs={recentDiffs} estimatedHcp={estimatedHcp} onNew={()=>{newRound();setView("rounds");}} hcpTimeline={hcpTimeline} diffByRoundId={diffByRoundId}/>}
+      {view==="simulator" && <HcpSimulator courses={db.courses} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} simulatedRounds={db.simulatedRounds} onAddRound={saveSimulatedRound} onDeleteRound={deleteSimulatedRound} onClearRounds={clearSimulatedRounds}/>}
       {view==="rounds" && <RoundList rounds={sortedRounds} courses={db.courses} onNew={newRound} onEdit={r=>setForm({...r})} onDelete={id=>setDeleteConfirm(id)} countingIds={countingIds} diffByRoundId={diffByRoundId}/>}
-      {view==="courses" && <CourseList courses={db.courses} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:""})} onEdit={c=>setCourseForm({...c})}/>}
+      {view==="courses" && <CourseList courses={db.courses} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:"",nineHolePhcpFactor:0.5})} onEdit={c=>setCourseForm({...c})}/>}
       {view==="profile" && <ProfileForm profile={db.profile} onSave={saveProfile}/>}
       {view==="data" && <DataPortability db={db} onImport={data=>{ saveDB(data); setDB(data); }}/>}
       {view==="info" && <HcpInfo/>}
@@ -1005,8 +1388,8 @@ export default function App() {
       <UpdateAppPrompt/>
       <InstallAppPrompt/>
 
-      {form && <Modal title={form.id?"Runde bearbeiten":"Neue Runde"} onClose={()=>setForm(null)}><RoundForm initial={form} courses={db.courses} onSave={saveRound} onCancel={()=>setForm(null)}/></Modal>}
-      {courseForm && <Modal title={courseForm.id?"Platz bearbeiten":"Neuer Platz"} onClose={()=>setCourseForm(null)}><CourseForm initial={courseForm} onSave={saveCourse} onCancel={()=>setCourseForm(null)}/></Modal>}
+      {form && <Modal title={form.id?"Runde bearbeiten":"Neue Runde"} onClose={()=>setForm(null)}><RoundForm initial={form} courses={db.courses} currentHcp={displayHcp} onSave={saveRound} onCancel={()=>setForm(null)}/></Modal>}
+      {courseForm && <Modal title={courseForm.id?"Platz bearbeiten":"Neuer Platz"} onClose={()=>setCourseForm(null)}><CourseForm initial={courseForm} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} onSave={saveCourse} onCancel={()=>setCourseForm(null)}/></Modal>}
       {deleteConfirm && <Modal title="Runde löschen?" onClose={()=>setDeleteConfirm(null)}>
         <p style={{color:COLORS.textSec,fontSize:14}}>Diese Runde wird unwiderruflich gelöscht.</p>
         <div style={{display:"flex",gap:8,marginTop:16}}>
