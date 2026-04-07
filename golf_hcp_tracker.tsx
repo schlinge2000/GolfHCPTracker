@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, type CSSProperties, type ReactNode } from "react";
+import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -50,6 +51,318 @@ function normalizeDB(data) {
     profile: safe.profile || {name:"", startHcp:54},
     nextRoundId,
     nextCourseId,
+  };
+}
+
+function normalizeText(value) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function normalizeWhitespace(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function parseGermanNumber(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const normalized = raw.includes(",")
+    ? raw.replace(/\./g, "").replace(",", ".")
+    : raw;
+  const parsed = parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseGolfDeDate(value) {
+  const match = String(value ?? "").match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!match) return "";
+  return `${match[3]}-${match[2]}-${match[1]}`;
+}
+
+function mapGolfDeTee(value) {
+  const normalized = normalizeText(value);
+  if (!normalized) return "Gelb";
+  if (normalized.startsWith("gelb")) return "Gelb";
+  if (normalized.startsWith("weiss") || normalized.startsWith("weis")) return "Weiß";
+  if (normalized.startsWith("blau")) return "Blau";
+  if (normalized.startsWith("rot")) return "Rot";
+  return value ? `${String(value).charAt(0).toUpperCase()}${String(value).slice(1)}` : "Gelb";
+}
+
+function average(values) {
+  if (!values.length) return null;
+  return values.reduce((sum, value)=>sum + value, 0) / values.length;
+}
+
+function buildCourseImportKey(course) {
+  return [
+    normalizeText(course.name),
+    normalizeText(course.tee),
+    String(parseFloat(course.courseRating) || ""),
+    String(parseInt(course.slopeRating) || ""),
+    String(parseInt(course.par) || ""),
+  ].join("|");
+}
+
+function buildRoundImportKey(round) {
+  if (round.source === "golf.de-pdf" && round.sourceRoundId) {
+    return `golf.de-pdf|${round.sourceRoundId}|${round.date}`;
+  }
+  return [
+    round.date,
+    normalizeText(round.courseName),
+    String(parseInt(round.holes) || ""),
+    String(parseFloat(round.playingHcp) || ""),
+    String(parseInt(round.gbe || round.adjustedGross) || ""),
+  ].join("|");
+}
+
+function isGolfDeImportedRound(round) {
+  return round?.source === "golf.de-pdf";
+}
+
+async function extractGolfDePdfText(file) {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+    pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const document = await pdfjs.getDocument({ data: bytes, disableWorker: true } as any).promise;
+  const pages = [];
+
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber);
+    const content = await page.getTextContent();
+    const lines = [];
+    let currentLine = "";
+
+    for (const item of content.items) {
+      if (!("str" in item)) continue;
+      const text = normalizeWhitespace(item.str);
+      if (text) currentLine = currentLine ? `${currentLine} ${text}` : text;
+      if (item.hasEOL && currentLine) {
+        lines.push(currentLine);
+        currentLine = "";
+      }
+    }
+
+    if (currentLine) lines.push(currentLine);
+    pages.push(lines.join("\n"));
+  }
+
+  return pages.join("\n");
+}
+
+// golf.de detailed PDF parser
+function parseGolfDeDetailedReport(text) {
+  const lines = String(text ?? "")
+    .split(/\r?\n/)
+    .map(line=>normalizeWhitespace(line))
+    .filter(line=>line && !/^seite\s+\d+/i.test(line) && !/^scoring record/i.test(line) && !/^hcpi\s+/i.test(line));
+  const summaryPattern = /^(\d+)\s+(\d{2}\.\d{2}\.\d{4})\s+\d+\s+(.+?)(?:\s*)(9|18)\s+([A-Z])\s+(\d+)\s+(-?\d+(?:[.,]\d+)?)$/i;
+  const parsedRounds = [];
+  const detailLabels = ["Club", "Platz", "Course", "Country", "Rd.", "Runde", "PCC", "Tees", "Tee", "Abschlag", "Par", "CR", "Course Rating", "Slope", "Slope Rating", "HCPI", "HI", "CH", "PHCP", "Playing HCP", "ExSc", "ExSc.", "Exact Score", "Score"];
+
+  const buildDetailMap = (detailLines) => {
+    const block = detailLines.join(" ");
+    const escapedLabels = detailLabels.map(label=>label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const regex = new RegExp(`(${escapedLabels.join("|")}):`, "gi");
+    const map = new Map();
+    const matches = [...block.matchAll(regex)];
+
+    for (let index = 0; index < matches.length; index += 1) {
+      const current = matches[index];
+      const next = matches[index + 1];
+      const key = current[1].toLowerCase();
+      const valueStart = current.index + current[0].length;
+      const valueEnd = next ? next.index : block.length;
+      const value = normalizeWhitespace(block.slice(valueStart, valueEnd));
+      map.set(key, value);
+    }
+
+    return map;
+  };
+
+  const readDetailValue = (detailMap, labels) => {
+    const variants = Array.isArray(labels) ? labels : [labels];
+    for (const variant of variants) {
+      const value = detailMap.get(String(variant).toLowerCase());
+      if (value) return value;
+    }
+    return "";
+  };
+
+  const parseSummaryLine = (line) => {
+    const match = line.match(summaryPattern);
+    if (match) return match;
+
+    const compact = line.split(/\s+/);
+    if (compact.length < 8) return null;
+    const diffToken = compact.at(-1);
+    const gbeToken = compact.at(-2);
+    const artToken = compact.at(-3);
+    const holesToken = compact.at(-4);
+    const clubNumberToken = compact.at(-5);
+    const dateToken = compact[1];
+    const roundNumberToken = compact[0];
+    if (!/^[0-9]+$/.test(roundNumberToken || "") || !/^\d{2}\.\d{2}\.\d{4}$/.test(dateToken || "")) return null;
+    if (!/^[0-9]+$/.test(clubNumberToken || "") || !/^(9|18)$/.test(holesToken || "") || !/^[A-Z]$/i.test(artToken || "") || !/^\d+$/.test(gbeToken || "") || !/^-?\d+(?:[.,]\d+)?$/.test(diffToken || "")) return null;
+    return [line, roundNumberToken, dateToken, compact.slice(2, -5).join(" "), holesToken, artToken, gbeToken, diffToken];
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = parseSummaryLine(lines[index]);
+    if (!match) continue;
+
+    const detailLines = [];
+    let nextIndex = index + 1;
+    while (nextIndex < lines.length && !parseSummaryLine(lines[nextIndex])) {
+      detailLines.push(lines[nextIndex]);
+      nextIndex += 1;
+    }
+
+    index = nextIndex - 1;
+  const detailMap = buildDetailMap(detailLines);
+
+    const sourceRoundId = parseInt(match[1], 10);
+    const date = parseGolfDeDate(match[2]);
+    const summaryCourseName = normalizeWhitespace(match[3]);
+    const holes = parseInt(match[4], 10);
+    const art = match[5];
+    const gbe = parseInt(match[6], 10);
+    const reportedDiff = parseGermanNumber(match[7]);
+  const club = readDetailValue(detailMap, ["Club", "Platz", "Course"]) || summaryCourseName;
+  const tee = mapGolfDeTee(readDetailValue(detailMap, ["Tees", "Tee", "Abschlag"]));
+  const par = parseInt(readDetailValue(detailMap, "Par"), 10);
+  const courseRating = parseGermanNumber(readDetailValue(detailMap, ["CR", "Course Rating"]));
+  const slopeRating = parseInt(readDetailValue(detailMap, ["Slope", "Slope Rating"]), 10);
+  const handicapIndexBefore = parseGermanNumber(readDetailValue(detailMap, ["HCPI", "HI"]));
+  const playingHcp = parseGermanNumber(readDetailValue(detailMap, ["CH", "PHCP", "Playing HCP"]));
+  const exactScore = parseInt(readDetailValue(detailMap, ["ExSc", "ExSc.", "Exact Score", "Score"]), 10);
+  const pcc = parseInt(readDetailValue(detailMap, "PCC"), 10) || 0;
+  const importedGbe = Number.isFinite(exactScore) && exactScore > 0 ? exactScore : gbe;
+    const baseCourseHandicap = holes === 9 && handicapIndexBefore !== null && courseRating !== null && Number.isFinite(slopeRating) && Number.isFinite(par)
+      ? calcCourseHandicap(handicapIndexBefore, courseRating, slopeRating, par)
+      : null;
+    const nineHolePhcpFactor = holes === 9 && Number.isFinite(playingHcp) && Number.isFinite(baseCourseHandicap) && baseCourseHandicap
+      ? round3(playingHcp / baseCourseHandicap)
+      : null;
+
+    if (!date || !club || !Number.isFinite(par) || !Number.isFinite(slopeRating) || courseRating === null) continue;
+
+    parsedRounds.push({
+      source: "golf.de-pdf",
+      sourceRoundId,
+      date,
+      courseName: club,
+      course: {
+        name: club,
+        tee,
+        par,
+        courseRating,
+        slopeRating,
+        nineHolePhcpFactor,
+      },
+      mode: art === "S" ? "Stableford" : "Stroke Play",
+      format: "Einzel",
+      holes,
+      submitted: true,
+      markerSigned: true,
+      nineHoleAllowed: holes === 9,
+      playingHcp: Number.isFinite(playingHcp) ? round1(playingHcp) : "",
+      courseRating,
+      slopeRating,
+      par,
+      gbe: Number.isFinite(importedGbe) ? importedGbe : "",
+      adjustedGross: Number.isFinite(importedGbe) ? importedGbe : "",
+      reportedDiff,
+      handicapIndexBefore,
+      pcc,
+      tee,
+    });
+  }
+
+  const detailedRounds = parsedRounds.filter(round=>Number.isFinite(round.courseRating) && Number.isFinite(round.slopeRating) && Number.isFinite(round.par));
+  if (!detailedRounds.length) {
+    throw new Error("Kein detaillierter golf.de-Report erkannt. Bitte immer den detaillierten Report als PDF drucken.");
+  }
+  return detailedRounds;
+}
+
+function mergeGolfDeImport(currentDb, importedRounds) {
+  const nextDb = normalizeDB(currentDb);
+  const courses = [...nextDb.courses];
+  const rounds = [...nextDb.rounds];
+  let nextCourseId = nextDb.nextCourseId;
+  let nextRoundId = nextDb.nextRoundId;
+  const courseIdsByKey = new Map(courses.map(course=>[buildCourseImportKey(course), course.id]));
+  const roundKeys = new Set(rounds.map(buildRoundImportKey));
+  let createdCourses = 0;
+  let importedRoundCount = 0;
+  let skippedRounds = 0;
+
+  for (const importedRound of importedRounds) {
+    const courseKey = buildCourseImportKey(importedRound.course);
+    let courseId = courseIdsByKey.get(courseKey);
+
+    if (!courseId) {
+      courseId = nextCourseId;
+      nextCourseId += 1;
+      courses.push(normalizeCourse({
+        id: courseId,
+        name: importedRound.course.name,
+        tee: importedRound.course.tee,
+        courseRating: importedRound.course.courseRating,
+        slopeRating: importedRound.course.slopeRating,
+        par: importedRound.course.par,
+        notes: "Automatisch aus golf.de PDF erstellt.",
+        nineHolePhcpFactor: importedRound.course.nineHolePhcpFactor ?? 0.5,
+      }));
+      courseIdsByKey.set(courseKey, courseId);
+      createdCourses += 1;
+    } else if (importedRound.course.nineHolePhcpFactor) {
+      const courseIndex = courses.findIndex(course=>course.id === courseId);
+      if (courseIndex >= 0) {
+        const existingCourse = courses[courseIndex];
+        const existingFactor = parseFloat(existingCourse.nineHolePhcpFactor);
+        if (!Number.isFinite(existingFactor) || Math.abs(existingFactor - 0.5) < 0.001) {
+          courses[courseIndex] = normalizeCourse({
+            ...existingCourse,
+            nineHolePhcpFactor: importedRound.course.nineHolePhcpFactor,
+          });
+        }
+      }
+    }
+
+    const roundRecord = {
+      ...importedRound,
+      id: nextRoundId,
+      createdAt: new Date().toISOString(),
+      courseId,
+    };
+    const roundKey = buildRoundImportKey(roundRecord);
+    if (roundKeys.has(roundKey)) {
+      skippedRounds += 1;
+      continue;
+    }
+
+    nextRoundId += 1;
+    roundKeys.add(roundKey);
+    rounds.push(roundRecord);
+    importedRoundCount += 1;
+  }
+
+  return {
+    db: normalizeDB({ ...nextDb, courses, rounds, nextCourseId, nextRoundId }),
+    summary: {
+      importedRounds: importedRoundCount,
+      createdCourses,
+      skippedRounds,
+    },
   };
 }
 
@@ -597,7 +910,10 @@ function HcpRoundsTable({rounds, diffByRoundId, simulatedRoundIds=new Set()}) {
               borderTop: i>0 ? "0.5px solid var(--color-border-tertiary)" : "none"
             }}>
               <div>
-                <div style={{fontSize:13,fontWeight:counts?500:400,color:"var(--color-text-primary)"}}>{r.courseName}</div>
+                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  <div style={{fontSize:13,fontWeight:counts?500:400,color:"var(--color-text-primary)"}}>{r.courseName}</div>
+                  {isGolfDeImportedRound(r) && badge("golf.de", "#E1F1FB", "#0C447C")}
+                </div>
                 <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{r.date} · {r.holes} Loch · PHCP {r.playingHcp}</div>
               </div>
               <div style={{fontSize:14,fontWeight:500,textAlign:"right",color:counts?"#1D9E75":"var(--color-text-primary)"}}>
@@ -787,6 +1103,7 @@ function RoundRow({round:r, onEdit=()=>{}, onDelete=()=>{}, compact=false, count
   const status=hcpStatus(r);
   const diff=diffByRoundId.get(r.id) ?? null;
   const simulated = Boolean(r.simulated);
+  const imported = isGolfDeImportedRound(r);
   const borderColor = simulated ? "rgba(197,107,26,0.34)" : counting ? "rgba(29,158,117,0.38)" : "var(--color-border-tertiary)";
   const background = simulated
     ? counting ? "linear-gradient(180deg, #fff1df 0%, #ffe7c5 100%)" : "linear-gradient(180deg, rgba(255,248,239,0.98) 0%, rgba(255,240,218,0.98) 100%)"
@@ -798,12 +1115,14 @@ function RoundRow({round:r, onEdit=()=>{}, onDelete=()=>{}, compact=false, count
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <span style={{fontWeight:500,fontSize:14,color:"var(--color-text-primary)"}}>{r.courseName||"Unbekannter Platz"}</span>
           {simulated && badge("Simulation", "#fff1df", "#9a5314")}
+          {imported && badge("golf.de Import", "#E1F1FB", "#0C447C")}
           {badge(r.mode,r.mode==="Stableford"?"#EEEDFE":"#E6F1FB",r.mode==="Stableford"?"#3C3489":"#0C447C")}
           {badge(status.label,status.dot==="#1D9E75"?"#E1F5EE":"#F1EFE8",status.dot==="#1D9E75"?"#085041":"#5F5E5A")}
         </div>
         <div style={{fontSize:12,color:"var(--color-text-secondary)",marginTop:2}}>
           {r.date} · {r.holes} Loch · CR {r.courseRating} / SR {r.slopeRating}
           {r.gbe?` · GBE ${r.gbe}`:r.adjustedGross?` · AGS ${r.adjustedGross}`:""}
+          {imported && r.sourceRoundId ? ` · golf.de #${r.sourceRoundId}` : ""}
           {diff!==null?` · Diff: ${diff}`:""}
         </div>
       </div>
@@ -1141,9 +1460,27 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTime
   );
 }
 
-function DataPortability({db, onImport}) {
-  const [importError, setImportError] = useState("");
-  const [importSuccess, setImportSuccess] = useState(false);
+function DataPortability({db, onJsonImport, onGolfDePdfImport}) {
+  const [jsonStatus, setJsonStatus] = useState({ tone:"", message:"" });
+  const [pdfStatus, setPdfStatus] = useState({ tone:"", message:"" });
+  const importCard = (title, description, actionLabel, accept, onChange, status, tone="neutral") => {
+    const background = tone === "pdf"
+      ? "linear-gradient(180deg, rgba(225,241,251,0.96) 0%, rgba(244,249,253,0.96) 100%)"
+      : "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(246,248,245,0.95) 100%)";
+    const borderColor = tone === "pdf" ? "rgba(12,68,124,0.18)" : "var(--color-border-tertiary)";
+
+    return (
+      <div style={{...subtleCardStyle,background,border:`1px solid ${borderColor}`,padding:"18px 20px"}}>
+        <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>{title}</div>
+        <div style={{fontSize:13,color:"var(--color-text-secondary)",marginBottom:14,lineHeight:1.55}}>{description}</div>
+        <label style={{display:"inline-block",padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:tone==="pdf"?"#0C447C":"#F5F4F0",border:tone==="pdf"?"1px solid #0C447C":"0.5px solid var(--color-border-secondary)",cursor:"pointer",fontWeight:600,fontSize:14,color:tone==="pdf"?"#fff":"#111"}}>
+          {actionLabel}
+          <input type="file" accept={accept} onChange={onChange} style={{display:"none"}}/>
+        </label>
+        {status.message && <div style={{marginTop:10,fontSize:13,color:status.tone==="success"?"#1D9E75":"#E24B4A",fontWeight:status.tone==="success"?500:400}}>{status.message}</div>}
+      </div>
+    );
+  };
 
   const handleExport = () => {
     const json = JSON.stringify(db, null, 2);
@@ -1156,23 +1493,39 @@ function DataPortability({db, onImport}) {
     URL.revokeObjectURL(url);
   };
 
-  const handleImport = (e) => {
-    setImportError("");
-    setImportSuccess(false);
+  const handleJsonImport = async (e) => {
+    setJsonStatus({ tone:"", message:"" });
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result as string);
-        if (!data.rounds || !data.courses || !data.profile) throw new Error("Ungültiges Format");
-        onImport(data);
-        setImportSuccess(true);
-      } catch(err) {
-        setImportError("Datei konnte nicht gelesen werden. Bitte eine gültige Export-Datei verwenden.");
-      }
-    };
-    reader.readAsText(file);
+    try {
+      const data = JSON.parse(await file.text());
+      if (!data.rounds || !data.courses || !data.profile) throw new Error("Ungueltiges Format");
+      onJsonImport(data);
+      setJsonStatus({ tone:"success", message:"Backup erfolgreich wiederhergestellt." });
+    } catch (err) {
+      setJsonStatus({ tone:"error", message:"Datei konnte nicht gelesen werden. Bitte eine gueltige Export-Datei verwenden." });
+    }
+    e.target.value = "";
+  };
+
+  const handleGolfDeImport = async (e) => {
+    setPdfStatus({ tone:"", message:"" });
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const pdfText = await extractGolfDePdfText(file);
+      const parsedRounds = parseGolfDeDetailedReport(pdfText);
+      const result = onGolfDePdfImport(parsedRounds);
+      const parts = [`${result.importedRounds} Runde${result.importedRounds===1?"":"n"} importiert`];
+      if (result.createdCourses) parts.push(`${result.createdCourses} Platz/Plätze angelegt`);
+      if (result.skippedRounds) parts.push(`${result.skippedRounds} Duplikat${result.skippedRounds===1?"":"e"} uebersprungen`);
+      setPdfStatus({ tone:"success", message:parts.join(" · ") });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "PDF konnte nicht gelesen werden.";
+      setPdfStatus({ tone:"error", message });
+    }
+
     e.target.value = "";
   };
 
@@ -1193,16 +1546,26 @@ function DataPortability({db, onImport}) {
       </div>
 
       <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:20}}>
-        <div style={{fontSize:14,fontWeight:500,marginBottom:6}}>Import</div>
-        <div style={{fontSize:13,color:"var(--color-text-secondary)",marginBottom:12}}>
-          Daten aus einer Export-Datei wiederherstellen. <strong>Bestehende Daten werden überschrieben.</strong>
+        <div style={{fontSize:14,fontWeight:600,marginBottom:12}}>Importe</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:14}}>
+          {importCard(
+            "Backup per JSON",
+            <>Daten aus einer Export-Datei wiederherstellen. <strong>Bestehende Daten werden überschrieben.</strong></>,
+            "JSON-Datei wählen",
+            ".json,application/json",
+            handleJsonImport,
+            jsonStatus,
+          )}
+          {importCard(
+            "golf.de PDF Import",
+            <>Liest Runden aus dem golf.de Scoring Record und legt fehlende Plaetze automatisch an. Bitte immer den <strong>detaillierten Report</strong> als PDF drucken, damit CR, Slope, Abschlag und CH enthalten sind.</>,
+            "PDF wählen",
+            ".pdf,application/pdf",
+            handleGolfDeImport,
+            pdfStatus,
+            "pdf",
+          )}
         </div>
-        <label style={{display:"inline-block",padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"#F5F4F0",border:"0.5px solid var(--color-border-secondary)",cursor:"pointer",fontWeight:500,fontSize:14,color:"#111"}}>
-          JSON-Datei wählen
-          <input type="file" accept=".json,application/json" onChange={handleImport} style={{display:"none"}}/>
-        </label>
-        {importSuccess && <div style={{marginTop:10,fontSize:13,color:"#1D9E75",fontWeight:500}}>Import erfolgreich.</div>}
-        {importError && <div style={{marginTop:10,fontSize:13,color:"#E24B4A"}}>{importError}</div>}
       </div>
     </div>
   );
@@ -1483,7 +1846,20 @@ export default function App() {
       {view==="rounds" && <RoundList rounds={sortedRounds} courses={db.courses} onNew={newRound} onEdit={r=>setForm({...r})} onDelete={id=>setDeleteConfirm(id)} countingIds={countingIds} diffByRoundId={diffByRoundId}/>}
       {view==="courses" && <CourseList courses={db.courses} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:"",nineHolePhcpFactor:0.5})} onEdit={c=>setCourseForm({...c})}/>}
       {view==="profile" && <ProfileForm profile={db.profile} onSave={saveProfile}/>}
-      {view==="data" && <DataPortability db={db} onImport={data=>{ saveDB(data); setDB(data); }}/>}
+      {view==="data" && <DataPortability
+        db={db}
+        onJsonImport={data=>{
+          const normalized = normalizeDB(data);
+          saveDB(normalized);
+          setDB(normalized);
+        }}
+        onGolfDePdfImport={parsedRounds=>{
+          const result = mergeGolfDeImport(db, parsedRounds);
+          saveDB(result.db);
+          setDB(result.db);
+          return result.summary;
+        }}
+      />}
       {view==="info" && <HcpInfo/>}
 
       <UpdateAppPrompt/>
