@@ -1,4 +1,4 @@
-const CACHE_NAME = 'golf-hcp-tracker-v1';
+const CACHE_NAME = 'golf-hcp-tracker-v2';
 const APP_SHELL = [
   '/',
   '/index.html',
