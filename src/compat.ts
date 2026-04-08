@@ -6,7 +6,8 @@ type PromiseWithResolversResult<T> = {
 
 declare global {
   interface PromiseConstructor {
-    withResolvers?<T>(): PromiseWithResolversResult<T>;
+    withResolvers<T>(): PromiseWithResolversResult<T>;
+    try<T>(callback: () => T | PromiseLike<T>): Promise<T>;
   }
 
   interface URLConstructor {
@@ -14,6 +15,7 @@ declare global {
   }
 
   interface Array<T> {
+    at?(index: number): T | undefined;
     findLast?<S extends T>(
       predicate: (value: T, index: number, array: T[]) => value is S,
       thisArg?: unknown,
@@ -29,6 +31,7 @@ declare global {
   }
 
   interface ReadonlyArray<T> {
+    at?(index: number): T | undefined;
     findLast?<S extends T>(
       predicate: (value: T, index: number, array: readonly T[]) => value is S,
       thisArg?: unknown,
@@ -43,7 +46,12 @@ declare global {
     ): number;
   }
 
+  interface Map<K, V> {
+    getOrInsertComputed?(key: K, callback: (key: K) => V): V;
+  }
+
   interface String {
+    at?(index: number): string | undefined;
     replaceAll?(searchValue: string | RegExp, replaceValue: string): string;
   }
 }
@@ -60,6 +68,31 @@ if (typeof Promise.withResolvers !== "function") {
   };
 }
 
+if (typeof Promise.try !== "function") {
+  Promise.try = function promiseTry<T>(callback: () => T | PromiseLike<T>) {
+    return new Promise<T>((resolve, reject) => {
+      try {
+        resolve(callback());
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+}
+
+if (typeof Promise.allSettled !== "function") {
+  (Promise as any).allSettled = function allSettled(values: Iterable<unknown>) {
+    return Promise.all(
+      Array.from(values, (value) =>
+        Promise.resolve(value).then(
+          (resolved) => ({ status: "fulfilled", value: resolved }),
+          (reason) => ({ status: "rejected", reason }),
+        ),
+      ),
+    ) as Promise<any>;
+  };
+}
+
 if (typeof URL.parse !== "function") {
   URL.parse = function parse(input: string | URL, base?: string | URL) {
     try {
@@ -68,6 +101,22 @@ if (typeof URL.parse !== "function") {
       return null;
     }
   };
+}
+
+function normalizeAtIndex(length: number, index: number) {
+  if (index < 0) return length + index;
+  return index;
+}
+
+if (typeof Array.prototype.at !== "function") {
+  Object.defineProperty(Array.prototype, "at", {
+    value: function at<T>(this: T[], index: number) {
+      const normalizedIndex = normalizeAtIndex(this.length, Math.trunc(index) || 0);
+      return normalizedIndex >= 0 && normalizedIndex < this.length ? this[normalizedIndex] : undefined;
+    },
+    configurable: true,
+    writable: true,
+  });
 }
 
 if (typeof Array.prototype.findLast !== "function") {
@@ -97,6 +146,31 @@ if (typeof Array.prototype.findLastIndex !== "function") {
   });
 }
 
+if (typeof Map.prototype.getOrInsertComputed !== "function") {
+  Object.defineProperty(Map.prototype, "getOrInsertComputed", {
+    value: function getOrInsertComputed<K, V>(this: Map<K, V>, key: K, callback: (key: K) => V) {
+      if (this.has(key)) return this.get(key);
+      const value = callback(key);
+      this.set(key, value);
+      return value;
+    },
+    configurable: true,
+    writable: true,
+  });
+}
+
+if (typeof String.prototype.at !== "function") {
+  Object.defineProperty(String.prototype, "at", {
+    value: function at(index: number) {
+      const input = String(this);
+      const normalizedIndex = normalizeAtIndex(input.length, Math.trunc(index) || 0);
+      return normalizedIndex >= 0 && normalizedIndex < input.length ? input.charAt(normalizedIndex) : undefined;
+    },
+    configurable: true,
+    writable: true,
+  });
+}
+
 if (typeof String.prototype.replaceAll !== "function") {
   Object.defineProperty(String.prototype, "replaceAll", {
     value: function replaceAll(searchValue: string | RegExp, replaceValue: string) {
@@ -105,6 +179,32 @@ if (typeof String.prototype.replaceAll !== "function") {
         return this.replace(new RegExp(searchValue.source, flags), replaceValue);
       }
       return this.split(String(searchValue)).join(replaceValue);
+    },
+    configurable: true,
+    writable: true,
+  });
+}
+
+for (const typedArrayCtor of [
+  Int8Array,
+  Uint8Array,
+  Uint8ClampedArray,
+  Int16Array,
+  Uint16Array,
+  Int32Array,
+  Uint32Array,
+  Float32Array,
+  Float64Array,
+  BigInt64Array,
+  BigUint64Array,
+ ] as any[]) {
+  if (typeof typedArrayCtor === "undefined") continue;
+  if (typeof typedArrayCtor.prototype.at === "function") continue;
+
+  Object.defineProperty(typedArrayCtor.prototype, "at", {
+    value: function at(index: number) {
+      const normalizedIndex = normalizeAtIndex(this.length, Math.trunc(index) || 0);
+      return normalizedIndex >= 0 && normalizedIndex < this.length ? this[normalizedIndex] : undefined;
     },
     configurable: true,
     writable: true,
