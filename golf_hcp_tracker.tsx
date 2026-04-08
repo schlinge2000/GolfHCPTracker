@@ -155,7 +155,7 @@ async function extractGolfDePdfText(file) {
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
     pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
   }
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  const bytes = new Uint8Array(await readFileAsArrayBuffer(file));
   const document = await pdfjs.getDocument({ data: bytes, disableWorker: true } as any).promise;
   const pages = [];
 
@@ -182,6 +182,25 @@ async function extractGolfDePdfText(file) {
   return pages.join("\n");
 }
 
+function readFileAsArrayBuffer(file) {
+  if (file && typeof file.arrayBuffer === "function") {
+    return file.arrayBuffer();
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("PDF konnte nicht gelesen werden."));
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("PDF konnte nicht gelesen werden."));
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 // golf.de detailed PDF parser
 function parseGolfDeDetailedReport(text) {
   const lines = String(text ?? "")
@@ -197,7 +216,12 @@ function parseGolfDeDetailedReport(text) {
     const escapedLabels = detailLabels.map(label=>label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     const regex = new RegExp(`(${escapedLabels.join("|")}):`, "gi");
     const map = new Map();
-    const matches = [...block.matchAll(regex)];
+    const matches = [];
+    let currentMatch;
+
+    while ((currentMatch = regex.exec(block)) !== null) {
+      matches.push(currentMatch);
+    }
 
     for (let index = 0; index < matches.length; index += 1) {
       const current = matches[index];
