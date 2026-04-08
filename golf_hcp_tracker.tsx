@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, type CSSProperties, type ReactNode } from "react";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
+import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore } from "./src/hcpMath";
+
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
@@ -431,39 +433,13 @@ const HCP_RULES = [
   {maxRounds:20,take:8,adj:0},
 ];
 
-function round1(value) {
-  return Math.round(value * 10) / 10;
-}
-
-function getGrossScore(r) {
-  const gbe = parseFloat(r.gbe);
-  if (Number.isFinite(gbe)) return gbe;
-  const adjustedGross = parseFloat(r.adjustedGross);
-  return Number.isFinite(adjustedGross) ? adjustedGross : null;
-}
-
 function getHandicapRule(roundCount) {
   return HCP_RULES.find(rule=>roundCount<=rule.maxRounds) || HCP_RULES[HCP_RULES.length-1];
-}
-
-function calcExpectedNineHoleDiff(handicapIndex) {
-  const base = Math.min(54, Math.max(0, parseFloat(handicapIndex) || 54));
-  if (base >= 54) return 28.4;
-  return round1(((base * 1.04) + 2.4) / 2);
 }
 
 function getNineHolePhcpFactor(course) {
   const factor = parseFloat(course?.nineHolePhcpFactor);
   return Number.isFinite(factor) && factor > 0 ? factor : 0.5;
-}
-
-function calcCourseHandicap(handicapIndex, courseRating, slopeRating, par) {
-  const hi = parseFloat(handicapIndex);
-  const cr = parseFloat(courseRating);
-  const sr = parseFloat(slopeRating);
-  const scorePar = parseInt(par);
-  if (!Number.isFinite(hi) || !Number.isFinite(cr) || !Number.isFinite(sr) || !Number.isFinite(scorePar)) return null;
-  return (hi * sr) / 113 + (cr - scorePar);
 }
 
 function calcPlayingHcpFromCourse(handicapIndex, course, holesOverride) {
@@ -506,22 +482,6 @@ function buildProjectedHandicap({recentDiffs, currentHcp, round}) {
     countingDiffs,
     wouldCount: countingEntries.some(entry=>entry.index===nextDiffs.length-1),
   };
-}
-
-function calcScoreDiff(r, handicapIndexForNineHole) {
-  const reportedDiff = parseFloat(r.reportedDiff);
-  if (r?.source === "golf.de-pdf" && Number.isFinite(reportedDiff)) {
-    return round1(reportedDiff);
-  }
-
-  const cr=parseFloat(r.courseRating), sr=parseFloat(r.slopeRating);
-  const gross=getGrossScore(r);
-  if (!cr||!sr||gross===null) return null;
-  if (parseInt(r.holes)===9) {
-    const playedNineDiff = ((gross-cr)*113)/sr;
-    return round1(playedNineDiff + calcExpectedNineHoleDiff(handicapIndexForNineHole));
-  }
-  return round1(((gross-cr)*113)/sr);
 }
 
 function sortRoundsChronologically(a, b) {
