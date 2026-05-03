@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, type CSSProperties, type ReactNode } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore } from "./src/hcpMath";
@@ -615,10 +616,34 @@ function formatAdjustment(adj) {
 
 function HcpTooltip({displayHcp, estimatedHcp, roundCount, take, adjustment, countingDiffs, children}) {
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{top:number,left:number}|null>(null);
+  const triggerRef = useRef<HTMLDivElement|null>(null);
   const countingAverage = countingDiffs.length ? round1(countingDiffs.reduce((sum, diff)=>sum+diff,0) / countingDiffs.length) : null;
+
+  useLayoutEffect(()=>{
+    if (!open || !triggerRef.current) return;
+    const update = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const tooltipWidth = 280;
+      const margin = 8;
+      let left = rect.right - tooltipWidth;
+      if (left < margin) left = margin;
+      if (left + tooltipWidth > window.innerWidth - margin) left = window.innerWidth - tooltipWidth - margin;
+      setCoords({ top: rect.bottom + margin, left });
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [open]);
 
   return (
     <div
+      ref={triggerRef}
       style={{position:"relative",display:"inline-block"}}
       onMouseEnter={()=>setOpen(true)}
       onMouseLeave={()=>setOpen(false)}
@@ -626,20 +651,21 @@ function HcpTooltip({displayHcp, estimatedHcp, roundCount, take, adjustment, cou
       <div onClick={()=>setOpen(prev=>!prev)} style={{cursor:"help"}}>
         {children}
       </div>
-      {open && (
+      {open && coords && typeof document !== "undefined" && createPortal(
         <div
           style={{
-            position:"absolute",
-            top:"calc(100% + 8px)",
-            right:0,
+            position:"fixed",
+            top:coords.top,
+            left:coords.left,
             width:280,
             background:"linear-gradient(180deg, rgba(18,33,27,0.98) 0%, rgba(24,44,35,0.96) 100%)",
             border:"1px solid rgba(255,255,255,0.12)",
             borderRadius:"var(--border-radius-md)",
             boxShadow:"0 18px 44px rgba(17, 17, 17, 0.28)",
             padding:"14px 15px",
-            zIndex:30,
+            zIndex:1000,
             textAlign:"left",
+            pointerEvents:"none",
           }}
         >
           <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.68)",marginBottom:8}}>Aktuelle HCP-Berechnung</div>
@@ -667,7 +693,8 @@ function HcpTooltip({displayHcp, estimatedHcp, roundCount, take, adjustment, cou
               )}
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
