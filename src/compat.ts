@@ -211,4 +211,42 @@ for (const typedArrayCtor of [
   });
 }
 
+if (
+  typeof ReadableStream !== "undefined" &&
+  typeof (ReadableStream.prototype as any)[Symbol.asyncIterator] !== "function"
+) {
+  Object.defineProperty(ReadableStream.prototype, Symbol.asyncIterator, {
+    value: function asyncIterator(this: ReadableStream<any>, options: { preventCancel?: boolean } = {}) {
+      const reader = this.getReader();
+      const preventCancel = options?.preventCancel === true;
+      return {
+        next() {
+          return reader.read().then(
+            (result) => {
+              if (result.done) {
+                reader.releaseLock();
+              }
+              return result;
+            },
+            (error) => {
+              reader.releaseLock();
+              throw error;
+            },
+          );
+        },
+        return(value: unknown) {
+          const cancelPromise = preventCancel ? Promise.resolve() : reader.cancel(value);
+          reader.releaseLock();
+          return cancelPromise.then(() => ({ value, done: true }));
+        },
+        [Symbol.asyncIterator]() {
+          return this;
+        },
+      };
+    },
+    configurable: true,
+    writable: true,
+  });
+}
+
 export {};
