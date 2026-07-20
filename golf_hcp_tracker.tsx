@@ -1643,6 +1643,7 @@ function HcpInfo() {
         {formula("Differenzial = (GBE − Course Rating) × 113 ÷ Slope Rating")}
         {p("GBE = Gross Brutto Ergebnis (angepasstes Brutto-Score). Course Rating und Slope Rating stehen auf der Scorekarte des Platzes.")}
         {p("Beispiel: GBE 95, CR 72.0, SR 130 → (95 − 72) × 113 ÷ 130 = 20.0")}
+        {p("Im vollständigen WHS wird zusätzlich die Platzverhältnis-Korrektur PCC abgezogen: Differenzial = (GBE − Course Rating − PCC) × 113 ÷ Slope Rating. Bei golf.de-PDF-Import übernimmt die App das fertige Differenzial inklusive PCC direkt; bei manueller Eingabe wird PCC = 0 angenommen.")}
         {formula("9-Loch: tatsächliches 9-Loch-Differenzial\n= (GBE − Course Rating) × 113 ÷ Slope Rating\n\n18-Loch-Wert = 9-Loch-Differenzial + erwartetes 9-Loch-Differenzial\naus dem aktuellen Handicap Index")}
       </>)}
 
@@ -1672,6 +1673,15 @@ function HcpInfo() {
         {h("Schritt 3 – Handicap Index berechnen")}
         {p("Der Handicap Index ergibt sich aus dem Mittelwert der aktuell zählenden Differenziale plus der WHS-Anpassung für kleine Rundenzahlen. Das Ergebnis wird auf 1 Dezimalstelle gerundet und auf max. 54 begrenzt.")}
         {formula("HCP Index = Ø(beste Differenziale) + Anpassung")}
+        {p("Dies ist der WHS-Grundwert. Er entspricht dem, was golf.de als „Berechneter HCPI“ ausweist. Der offiziell geführte HCPI kann davon abweichen, sobald Bremse/Cap oder ein Exceptional Score greifen (siehe unten).")}
+      </>)}
+
+      {card(<>
+        {h("Weitere WHS-Anpassungen")}
+        {p("Das World Handicap System kennt Korrekturen, die den offiziellen Index über den reinen Mittelwert hinaus verändern. Bei golf.de-PDF-Import stecken sie bereits im übernommenen Differenzial; bei manueller Eingabe bildet die App sie aktuell noch nicht vollständig ab.")}
+        {p("• PCC (Playing Conditions Calculation): tagesbezogene Platzverhältnis-Korrektur des Differenzials.")}
+        {p("• Exceptional Score (Regel 5.9): liegt ein Differenzial 7,0–9,9 Schläge unter dem Index, werden alle aktuellen Differenziale um 1,0 gesenkt, bei 10,0 oder mehr um 2,0 – rückwirkend auf den gesamten Record.")}
+        {p("• Bremse & Cap (Soft-/Hard-Cap): ein starker Anstieg des Index gegenüber dem niedrigsten Index der letzten 365 Tage (Low HCPI) wird gedämpft bzw. gedeckelt.")}
       </>)}
 
       {card(<>
