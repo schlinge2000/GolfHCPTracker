@@ -57,3 +57,35 @@ export function calcScoreDiff(round: HandicapRoundLike, handicapIndexForNineHole
   }
   return calcRawScoreDiff(round, handicapIndexForNineHole);
 }
+
+export type HandicapRule = { maxRounds: number; take: number; adj: number };
+
+// WHS Handicap-Index-Tabelle: Anzahl der wertbaren Ergebnisse -> Anzahl der besten
+// Differenziale und die Anpassung, die EINMAL auf den Mittelwert addiert wird
+// (nicht auf die einzelnen Differenziale).
+export const HCP_RULES: HandicapRule[] = [
+  {maxRounds:3,take:1,adj:-2},
+  {maxRounds:4,take:1,adj:-1},
+  {maxRounds:5,take:1,adj:0},
+  {maxRounds:6,take:2,adj:-1},
+  {maxRounds:8,take:2,adj:0},
+  {maxRounds:11,take:3,adj:0},
+  {maxRounds:14,take:4,adj:0},
+  {maxRounds:16,take:5,adj:0},
+  {maxRounds:18,take:6,adj:0},
+  {maxRounds:19,take:7,adj:0},
+  {maxRounds:20,take:8,adj:0},
+];
+
+export function getHandicapRule(roundCount: number): HandicapRule {
+  return HCP_RULES.find(rule=>roundCount<=rule.maxRounds) || HCP_RULES[HCP_RULES.length-1];
+}
+
+export function calcHcp(diffs: number[]): number | null {
+  if (!diffs.length) return null;
+  const n = Math.min(diffs.length, 20);
+  const {take,adj} = getHandicapRule(n);
+  const best = [...diffs].sort((a,b)=>a-b).slice(0,take);
+  const avg = best.reduce((s,d)=>s+d,0)/best.length;
+  return Math.min(54, round1(avg + adj));
+}

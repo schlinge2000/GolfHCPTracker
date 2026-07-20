@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperti
 import { createPortal } from "react-dom";
 import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
-import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore } from "./src/hcpMath";
+import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES } from "./src/hcpMath";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -444,24 +444,6 @@ function isHcpEligible(r) {
     (parseInt(r.holes)===18 || r.nineHoleAllowed);
 }
 
-const HCP_RULES = [
-  {maxRounds:2,take:1,adj:-2},
-  {maxRounds:4,take:1,adj:-1},
-  {maxRounds:5,take:1,adj:0},
-  {maxRounds:6,take:2,adj:-1},
-  {maxRounds:8,take:2,adj:0},
-  {maxRounds:11,take:3,adj:0},
-  {maxRounds:14,take:4,adj:0},
-  {maxRounds:16,take:5,adj:0},
-  {maxRounds:18,take:6,adj:0},
-  {maxRounds:19,take:7,adj:0},
-  {maxRounds:20,take:8,adj:0},
-];
-
-function getHandicapRule(roundCount) {
-  return HCP_RULES.find(rule=>roundCount<=rule.maxRounds) || HCP_RULES[HCP_RULES.length-1];
-}
-
 function getNineHolePhcpFactor(course) {
   const factor = parseFloat(course?.nineHolePhcpFactor);
   return Number.isFinite(factor) && factor > 0 ? factor : 0.5;
@@ -583,15 +565,6 @@ function hcpStatus(r) {
   if (r.format!=="Einzel") return {label:"Nicht HCP-wirksam (Format)", dot:"#B4B2A9"};
   if (parseInt(r.holes)<18 && !r.nineHoleAllowed) return {label:"9-Loch (nicht aktiviert)", dot:"#D3D1C7"};
   return {label:"HCP-wirksam", dot:"#1D9E75"};
-}
-
-function calcHcp(diffs) {
-  if (!diffs.length) return null;
-  const n = Math.min(diffs.length, 20);
-  const {take,adj} = getHandicapRule(n);
-  const best = [...diffs].sort((a,b)=>a-b).slice(0,take);
-  const avg = best.reduce((s,d)=>s+d,0)/best.length;
-  return Math.min(54, round1(avg + adj));
 }
 
 function field(label: string, children: ReactNode, hint?: string) {
@@ -1682,7 +1655,10 @@ function HcpInfo() {
           </div>
           {HCP_RULES.map((rule,i)=>(
             <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"5px 12px",fontSize:12,borderTop:"0.5px solid var(--color-border-tertiary)",background:i%2===0?"#fff":"var(--color-background-secondary)"}}>
-              <span>{i===0 ? `1–${rule.maxRounds}` : `${HCP_RULES[i-1].maxRounds+1}–${rule.maxRounds}`}</span>
+              <span>{(() => {
+                const from = i===0 ? 1 : HCP_RULES[i-1].maxRounds+1;
+                return from===rule.maxRounds ? `${from}` : `${from}–${rule.maxRounds}`;
+              })()}</span>
               <span style={{textAlign:"center"}}>{rule.take}</span>
               <span style={{textAlign:"right",color:rule.adj<0?"#E24B4A":rule.adj>0?"#888":"inherit"}}>
                 {rule.adj<0 ? rule.adj : rule.adj>0 ? `+${rule.adj}` : "–"}
