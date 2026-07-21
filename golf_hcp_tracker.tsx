@@ -483,6 +483,20 @@ function buildProjectedHandicap({recentDiffs, currentHcp, round}) {
   const sortedEntries = nextDiffs.map((value, index)=>({value, index})).sort((a,b)=>a.value-b.value || a.index-b.index);
   const countingEntries = sortedEntries.slice(0, rule.take);
   const countingDiffs = countingEntries.map(entry=>entry.value);
+  const wouldCount = countingEntries.some(entry=>entry.index===nextDiffs.length-1);
+
+  // Kontext für die Erklärung, wie sich das Wertungsfenster verändert.
+  const windowCountBefore = recentDiffs.length;
+  const windowFullBefore = windowCountBefore >= 20;
+  const droppedDiff = windowFullBefore ? recentDiffs[0] : null; // fällt aus dem 20er-Fenster
+  const prevRule = windowCountBefore > 0 ? getHandicapRule(Math.min(windowCountBefore, 20)) : null;
+  const prevCounting = prevRule ? [...recentDiffs].sort((a,b)=>a-b).slice(0, prevRule.take) : [];
+  const prevWorstCounting = prevCounting.length ? prevCounting[prevCounting.length-1] : null;
+  const takeGrew = prevRule ? rule.take > prevRule.take : true;
+  const replacedCountingDiff = (wouldCount && !takeGrew && prevWorstCounting!==null && prevCounting.length===rule.take && diff < prevWorstCounting)
+    ? prevWorstCounting : null;
+  const countingAvg = countingDiffs.length ? round1(countingDiffs.reduce((s,d)=>s+d,0)/countingDiffs.length) : null;
+  const retentionHeld = base!==null && Math.abs(base - nextHcp) > 0.001;
 
   return {
     diff,
@@ -490,8 +504,51 @@ function buildProjectedHandicap({recentDiffs, currentHcp, round}) {
     nextDiffs,
     rule,
     countingDiffs,
-    wouldCount: countingEntries.some(entry=>entry.index===nextDiffs.length-1),
+    wouldCount,
+    base,
+    countingAvg,
+    reduction,
+    droppedDiff,
+    replacedCountingDiff,
+    takeGrew,
+    windowCountBefore,
+    windowFullBefore,
+    retentionHeld,
+    currentHcp,
   };
+}
+
+// Erzeugt die Schritt-für-Schritt-Erklärung für die Simulator-Vorschau.
+function buildPreviewExplanation(p) {
+  const lines = [];
+  const take = p.rule.take;
+  if (p.windowFullBefore) {
+    lines.push(`Das 20er-Fenster ist voll: die älteste Runde (Differenzial ${p.droppedDiff.toFixed(1)}) fällt heraus und wird durch diese ersetzt.`);
+  } else {
+    lines.push(`Es ist deine ${p.windowCountBefore + 1}. wertbare Runde – das Fenster (max. 20) ist noch nicht voll, es fällt keine Runde heraus.`);
+  }
+  if (p.reduction > 0) {
+    lines.push(`Ausnahmerunde (Exceptional Score): −${p.reduction.toFixed(1)} auf alle Differenziale im Fenster.`);
+  }
+  if (p.wouldCount) {
+    if (p.replacedCountingDiff != null) {
+      lines.push(`Sie zählt und verdrängt mit ${p.diff.toFixed(1)} das bisher höchste zählende Differenzial (${p.replacedCountingDiff.toFixed(1)}) aus den besten ${take}.`);
+    } else if (p.takeGrew) {
+      lines.push(`Sie zählt: das Fenster ist gewachsen, jetzt zählen die besten ${take} Differenziale – deins ist dabei.`);
+    } else {
+      lines.push(`Sie zählt: sie gehört zu den besten ${take} Differenzialen.`);
+    }
+  } else {
+    lines.push(`Sie zählt nicht: sie liegt nicht unter den besten ${take} – die zählenden Differenziale bleiben unverändert.`);
+  }
+  if (p.retentionHeld) {
+    lines.push(`Bremse (Anfängerregel > 26,9): der Index bleibt bei ${p.currentHcp.toFixed(1)}, statt rechnerisch auf ${p.base.toFixed(1)} zu steigen.`);
+  } else if (p.countingAvg != null) {
+    const adj = p.rule.adj;
+    const adjTxt = adj ? ` ${adj > 0 ? "+" : "−"} ${Math.abs(adj).toFixed(1)}` : " ± 0";
+    lines.push(`Ergebnis: Ø der besten ${take} (${p.countingAvg.toFixed(1)})${adjTxt} = ${p.nextHcp.toFixed(1)}.`);
+  }
+  return lines;
 }
 
 function sortRoundsChronologically(a, b) {
@@ -1368,6 +1425,15 @@ function SimulatorRoundForm({initial, courses, currentHcp, onSave, onCancel}) {
             <div><div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Differential</div><div style={{fontSize:22,fontWeight:600}}>{preview.diff.toFixed(1)}</div></div>
             <div><div style={{fontSize:12,color:"var(--color-text-secondary)"}}>HCP danach</div><div style={{fontSize:22,fontWeight:600,color:COLORS.hcp}}>{preview.nextHcp.toFixed(1)}</div></div>
             <div><div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Zaehlt?</div><div style={{fontSize:16,fontWeight:600,color:preview.wouldCount ? "#085041" : "#9a5314"}}>{preview.wouldCount ? "Ja" : "Eher nicht"}</div></div>
+          </div>
+          <div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid rgba(154,83,20,0.24)"}}>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"#9a5314",marginBottom:6}}>So verändert sich die Wertung</div>
+            {buildPreviewExplanation(preview).map((line,i)=>(
+              <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.5,marginBottom:4}}>
+                <span style={{color:"#9a5314",flexShrink:0}}>{i+1}.</span>
+                <span>{line}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
