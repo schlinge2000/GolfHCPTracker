@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { calcHcp, calcRawScoreDiff, calcScoreDiff, getHandicapRule } from "./hcpMath";
+import {
+  applyBeginnerRetention,
+  BEGINNER_RETENTION_MAX,
+  calcHcp,
+  calcRawScoreDiff,
+  calcScoreDiff,
+  getHandicapRule,
+} from "./hcpMath";
 
 const pdfSampleRounds = [
   {
@@ -211,10 +218,62 @@ describe("golf.de scoring record 20.07.2026 – Handicap Index (base WHS value)"
   it("computes the WHS base index (golf.de 'Berechneter HCPI') of 30.7", () => {
     expect(calcHcp(reportedDiffs)).toBe(30.7);
   });
+});
 
-  // Der offizielle golf.de-HCPI ist 30.1. Die Differenz zu 30.7 entsteht durch das
-  // Bremse-/Cap-Verfahren (Soft-/Hard-Cap, WHS 5.7/5.8), das an den "Low HCPI" der
-  // letzten 365 Tage gebunden ist. Das ist in calcHcp bewusst noch NICHT abgebildet.
-  // Sobald die Cap-Logik existiert, sollte hier 30.1 geprüft werden.
-  it.todo("applies soft-/hard-cap to reach the official golf.de HCPI of 30.1");
+// Bildet buildHandicapTimeline nach: chronologisch je Runde den WHS-Grundwert
+// berechnen und die DGV-Anfängerregel anwenden.
+function replayWithRetention(chronologicalDiffs: number[], startHcp = 54): number {
+  let current = Math.min(54, startHcp);
+  const acc: number[] = [];
+  for (const diff of chronologicalDiffs) {
+    acc.push(diff);
+    const base = calcHcp(acc);
+    if (base !== null) current = applyBeginnerRetention(base, current);
+  }
+  return current;
+}
+
+describe("DGV beginner retention rule (applyBeginnerRetention)", () => {
+  it("keeps a once-achieved index above 26.9 from rising again", () => {
+    expect(applyBeginnerRetention(31.7, 30.1)).toBe(30.1);
+  });
+
+  it("always allows the index to improve (drop)", () => {
+    expect(applyBeginnerRetention(28.0, 30.1)).toBe(28.0);
+  });
+
+  it("does not block a rise once the index is 26.9 or better", () => {
+    // previousHcp = 26.9 liegt nicht ÜBER der Schwelle -> normale Bewegung.
+    expect(applyBeginnerRetention(28.0, BEGINNER_RETENTION_MAX)).toBe(28.0);
+    expect(applyBeginnerRetention(27.5, 26.5)).toBe(27.5);
+  });
+});
+
+describe("golf.de scoring record 20.07.2026 – official HCPI with beginner retention", () => {
+  const reportedDiffs = scoringRecord2026.map(r => r.reportedSD);
+
+  it("reaches the official golf.de HCPI of 30.1 (brake held after the exceptional 109)", () => {
+    expect(replayWithRetention(reportedDiffs)).toBe(30.1);
+  });
+
+  // Ab Runde 11 (der 109) sind die gespeicherten Differenziale stabil, daher matcht
+  // die geführte Progression golf.de exakt. Die vier ältesten Zwischenwerte weichen
+  // ab, weil dort die Exceptional-Score-Reduktion bereits im gespeicherten
+  // Differenzial steckt (bekannte Grenze des reinen Replays mit End-Differenzialen).
+  it("matches golf.de's official index from the exceptional round onward", () => {
+    const golfDeAfter = [30.4, 30.4, 30.4, 30.1, 30.1, 30.1, 30.1, 30.1, 30.1, 30.1, 30.1];
+    const fromRound11 = reportedDiffs.slice(0, 5); // R15..R11
+    const rest = reportedDiffs.slice(5); // R10..R1
+    let current = replayWithRetention(fromRound11);
+    const acc = [...fromRound11];
+    const progression: number[] = [];
+    for (const diff of rest) {
+      acc.push(diff);
+      const base = calcHcp(acc)!;
+      current = applyBeginnerRetention(base, current);
+      progression.push(current);
+    }
+    // current nach R11 selbst + Fortschreibung R10..R1
+    expect([replayWithRetention(fromRound11), ...progression]).toEqual(golfDeAfter);
+  });
 });

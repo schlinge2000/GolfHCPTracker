@@ -89,3 +89,21 @@ export function calcHcp(diffs: number[]): number | null {
   const avg = best.reduce((s,d)=>s+d,0)/best.length;
   return Math.min(54, round1(avg + adj));
 }
+
+// Oberhalb dieses Handicap-Index gilt die DGV-Anfängerregel (siehe unten).
+export const BEGINNER_RETENTION_MAX = 26.9;
+
+// DGV-Anfängerregel ("Bremse"): Solange der Handicap-Index über
+// BEGINNER_RETENTION_MAX liegt, wird ein bereits erspielter (niedrigerer) Index
+// nicht wieder angehoben – er kann in diesem Bereich nur besser werden. Sobald
+// 26.9 oder besser erreicht ist, entfällt die Sperre und der Index bewegt sich
+// normal in beide Richtungen.
+//
+// baseHcp    = frisch aus den Differenzialen berechneter WHS-Grundwert
+// previousHcp = zuletzt geführter (offizieller) Index vor dieser Runde
+export function applyBeginnerRetention(baseHcp: number, previousHcp: number): number {
+  if (previousHcp > BEGINNER_RETENTION_MAX && baseHcp > previousHcp) {
+    return previousHcp;
+  }
+  return baseHcp;
+}

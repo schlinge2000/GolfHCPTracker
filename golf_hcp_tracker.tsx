@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperti
 import { createPortal } from "react-dom";
 import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
-import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES } from "./src/hcpMath";
+import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention } from "./src/hcpMath";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -475,7 +475,8 @@ function buildProjectedHandicap({recentDiffs, currentHcp, round}) {
   if (diff===null) return null;
 
   const nextDiffs = [...recentDiffs, diff].slice(-20);
-  const nextHcp = calcHcp(nextDiffs);
+  const base = calcHcp(nextDiffs);
+  const nextHcp = base === null ? currentHcp : applyBeginnerRetention(base, currentHcp);
   const rule = getHandicapRule(nextDiffs.length);
   const sortedEntries = nextDiffs.map((value, index)=>({value, index})).sort((a,b)=>a.value-b.value || a.index-b.index);
   const countingEntries = sortedEntries.slice(0, rule.take);
@@ -524,7 +525,8 @@ function buildHandicapTimeline(rounds, startHcp) {
     const diff = calcScoreDiff(round, preRoundHcp);
     if (diff===null) return null;
     diffs.push(diff);
-    currentHcp = calcHcp(diffs) ?? currentHcp;
+    const base = calcHcp(diffs);
+    currentHcp = base === null ? currentHcp : applyBeginnerRetention(base, preRoundHcp);
     return { round, diff, hcpAfter: currentHcp, preRoundHcp };
   }).filter(Boolean);
 }
@@ -1678,10 +1680,10 @@ function HcpInfo() {
 
       {card(<>
         {h("Weitere WHS-Anpassungen")}
-        {p("Das World Handicap System kennt Korrekturen, die den offiziellen Index über den reinen Mittelwert hinaus verändern. Bei golf.de-PDF-Import stecken sie bereits im übernommenen Differenzial; bei manueller Eingabe bildet die App sie aktuell noch nicht vollständig ab.")}
+        {p("Das World Handicap System kennt Korrekturen über den reinen Mittelwert hinaus. Bei golf.de-PDF-Import stecken PCC und Exceptional Score bereits im übernommenen Differenzial; bei manueller Eingabe rechnet die App mit PCC 0 und ohne Exceptional-Score-Reduktion. Die DGV-Anfängerregel (Bremse) bildet die App dagegen ab.")}
         {p("• PCC (Playing Conditions Calculation): tagesbezogene Platzverhältnis-Korrektur des Differenzials.")}
         {p("• Exceptional Score (Regel 5.9): liegt ein Differenzial 7,0–9,9 Schläge unter dem Index, werden alle aktuellen Differenziale um 1,0 gesenkt, bei 10,0 oder mehr um 2,0 – rückwirkend auf den gesamten Record.")}
-        {p("• Bremse & Cap (Soft-/Hard-Cap): ein starker Anstieg des Index gegenüber dem niedrigsten Index der letzten 365 Tage (Low HCPI) wird gedämpft bzw. gedeckelt.")}
+        {p("• Bremse (DGV-Anfängerregel): Solange dein Handicap-Index über 26,9 liegt, kann er nur besser werden – ein einmal erspielter Index wird nicht wieder angehoben. Ab 26,9 bewegt er sich normal in beide Richtungen. Deshalb bleibt z. B. ein nach einer starken Runde erspielter Index bestehen, auch wenn danach schwächere Runden folgen.")}
       </>)}
 
       {card(<>
