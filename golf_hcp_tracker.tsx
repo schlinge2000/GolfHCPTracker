@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperti
 import { createPortal } from "react-dom";
 import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
-import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore } from "./src/hcpMath";
+import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline } from "./src/hcpMath";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -444,24 +444,6 @@ function isHcpEligible(r) {
     (parseInt(r.holes)===18 || r.nineHoleAllowed);
 }
 
-const HCP_RULES = [
-  {maxRounds:2,take:1,adj:-2},
-  {maxRounds:4,take:1,adj:-1},
-  {maxRounds:5,take:1,adj:0},
-  {maxRounds:6,take:2,adj:-1},
-  {maxRounds:8,take:2,adj:0},
-  {maxRounds:11,take:3,adj:0},
-  {maxRounds:14,take:4,adj:0},
-  {maxRounds:16,take:5,adj:0},
-  {maxRounds:18,take:6,adj:0},
-  {maxRounds:19,take:7,adj:0},
-  {maxRounds:20,take:8,adj:0},
-];
-
-function getHandicapRule(roundCount) {
-  return HCP_RULES.find(rule=>roundCount<=rule.maxRounds) || HCP_RULES[HCP_RULES.length-1];
-}
-
 function getNineHolePhcpFactor(course) {
   const factor = parseFloat(course?.nineHolePhcpFactor);
   return Number.isFinite(factor) && factor > 0 ? factor : 0.5;
@@ -492,8 +474,11 @@ function buildProjectedHandicap({recentDiffs, currentHcp, round}) {
   const diff = calcScoreDiff(round, currentHcp);
   if (diff===null) return null;
 
-  const nextDiffs = [...recentDiffs, diff].slice(-20);
-  const nextHcp = calcHcp(nextDiffs);
+  // Ausnahmerunde: senkt ggf. das gesamte aktuelle Fenster (WHS 5.9).
+  const reduction = exceptionalScoreReduction(currentHcp, diff);
+  const nextDiffs = [...recentDiffs, diff].slice(-20).map(d=>reduction>0 ? round1(d - reduction) : d);
+  const base = calcHcp(nextDiffs);
+  const nextHcp = base === null ? currentHcp : applyBeginnerRetention(base, currentHcp);
   const rule = getHandicapRule(nextDiffs.length);
   const sortedEntries = nextDiffs.map((value, index)=>({value, index})).sort((a,b)=>a.value-b.value || a.index-b.index);
   const countingEntries = sortedEntries.slice(0, rule.take);
@@ -534,17 +519,16 @@ function getLatestRoundDate(rounds) {
 
 function buildHandicapTimeline(rounds, startHcp) {
   const eligibleRounds = [...rounds].filter(isHcpEligible).sort(sortRoundsChronologically);
-  const diffs = [];
-  let currentHcp = Math.min(54, Math.max(0, parseFloat(startHcp) || 54));
-
-  return eligibleRounds.map(round=>{
-    const preRoundHcp = currentHcp;
-    const diff = calcScoreDiff(round, preRoundHcp);
-    if (diff===null) return null;
-    diffs.push(diff);
-    currentHcp = calcHcp(diffs) ?? currentHcp;
-    return { round, diff, hcpAfter: currentHcp, preRoundHcp };
-  }).filter(Boolean);
+  const start = Math.min(54, Math.max(0, parseFloat(startHcp) || 54));
+  // Chronologische WHS-Engine: Rohdifferenzial -> Exceptional-Score-Reduktion
+  // zum Ereigniszeitpunkt -> Bremse. Dadurch stimmen auch die historischen
+  // Zwischenstände und nicht nur der aktuelle Index.
+  return buildIndexTimeline(eligibleRounds, start).map(step=>({
+    round: step.round,
+    diff: step.diff,
+    hcpAfter: step.hcpAfter,
+    preRoundHcp: step.preRoundHcp,
+  }));
 }
 
 function deriveNineHolePhcpFactor(rounds, startHcp, courseId) {
@@ -583,15 +567,6 @@ function hcpStatus(r) {
   if (r.format!=="Einzel") return {label:"Nicht HCP-wirksam (Format)", dot:"#B4B2A9"};
   if (parseInt(r.holes)<18 && !r.nineHoleAllowed) return {label:"9-Loch (nicht aktiviert)", dot:"#D3D1C7"};
   return {label:"HCP-wirksam", dot:"#1D9E75"};
-}
-
-function calcHcp(diffs) {
-  if (!diffs.length) return null;
-  const n = Math.min(diffs.length, 20);
-  const {take,adj} = getHandicapRule(n);
-  const best = [...diffs].sort((a,b)=>a-b).slice(0,take);
-  const avg = best.reduce((s,d)=>s+d,0)/best.length;
-  return Math.min(54, round1(avg + adj));
 }
 
 function field(label: string, children: ReactNode, hint?: string) {
@@ -1670,6 +1645,7 @@ function HcpInfo() {
         {formula("Differenzial = (GBE − Course Rating) × 113 ÷ Slope Rating")}
         {p("GBE = Gross Brutto Ergebnis (angepasstes Brutto-Score). Course Rating und Slope Rating stehen auf der Scorekarte des Platzes.")}
         {p("Beispiel: GBE 95, CR 72.0, SR 130 → (95 − 72) × 113 ÷ 130 = 20.0")}
+        {p("Im vollständigen WHS wird zusätzlich die Platzverhältnis-Korrektur PCC abgezogen: Differenzial = (GBE − Course Rating − PCC) × 113 ÷ Slope Rating. Die App berechnet das Differenzial selbst aus GBE, Course Rating und Slope und rechnet dabei mit PCC = 0 (Details siehe „Weitere WHS-Anpassungen“).")}
         {formula("9-Loch: tatsächliches 9-Loch-Differenzial\n= (GBE − Course Rating) × 113 ÷ Slope Rating\n\n18-Loch-Wert = 9-Loch-Differenzial + erwartetes 9-Loch-Differenzial\naus dem aktuellen Handicap Index")}
       </>)}
 
@@ -1682,7 +1658,10 @@ function HcpInfo() {
           </div>
           {HCP_RULES.map((rule,i)=>(
             <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"5px 12px",fontSize:12,borderTop:"0.5px solid var(--color-border-tertiary)",background:i%2===0?"#fff":"var(--color-background-secondary)"}}>
-              <span>{i===0 ? `1–${rule.maxRounds}` : `${HCP_RULES[i-1].maxRounds+1}–${rule.maxRounds}`}</span>
+              <span>{(() => {
+                const from = i===0 ? 1 : HCP_RULES[i-1].maxRounds+1;
+                return from===rule.maxRounds ? `${from}` : `${from}–${rule.maxRounds}`;
+              })()}</span>
               <span style={{textAlign:"center"}}>{rule.take}</span>
               <span style={{textAlign:"right",color:rule.adj<0?"#E24B4A":rule.adj>0?"#888":"inherit"}}>
                 {rule.adj<0 ? rule.adj : rule.adj>0 ? `+${rule.adj}` : "–"}
@@ -1696,6 +1675,15 @@ function HcpInfo() {
         {h("Schritt 3 – Handicap Index berechnen")}
         {p("Der Handicap Index ergibt sich aus dem Mittelwert der aktuell zählenden Differenziale plus der WHS-Anpassung für kleine Rundenzahlen. Das Ergebnis wird auf 1 Dezimalstelle gerundet und auf max. 54 begrenzt.")}
         {formula("HCP Index = Ø(beste Differenziale) + Anpassung")}
+        {p("Dies ist der WHS-Grundwert. Er entspricht dem, was golf.de als „Berechneter HCPI“ ausweist. Der offiziell geführte HCPI kann davon abweichen, sobald Bremse/Cap oder ein Exceptional Score greifen (siehe unten).")}
+      </>)}
+
+      {card(<>
+        {h("Weitere WHS-Anpassungen")}
+        {p("Das World Handicap System kennt Korrekturen über den reinen Mittelwert hinaus. Die App verarbeitet die Runden chronologisch und bildet dabei Exceptional Score und die DGV-Anfängerregel (Bremse) mit ab. PCC wird als 0 angenommen (bei golf.de-Import steckt eine Platzverhältnis-Korrektur bereits im Bruttoergebnis).")}
+        {p("• PCC (Playing Conditions Calculation): tagesbezogene Platzverhältnis-Korrektur des Differenzials.")}
+        {p("• Exceptional Score (Regel 5.9): liegt ein Differenzial 7,0–9,9 Schläge unter dem Index, werden alle aktuellen Differenziale um 1,0 gesenkt, bei 10,0 oder mehr um 2,0. Entscheidend ist der Zeitpunkt: Die Reduktion greift ab der Ausnahmerunde und wirkt auf die dann vorhandenen Differenziale – deshalb ist die chronologische Reihenfolge (auch beim Import) wichtig.")}
+        {p("• Bremse (DGV-Anfängerregel): Solange dein Handicap-Index über 26,9 liegt, kann er nur besser werden – ein einmal erspielter Index wird nicht wieder angehoben. Ab 26,9 bewegt er sich normal in beide Richtungen. Deshalb bleibt z. B. ein nach einer starken Runde erspielter Index bestehen, auch wenn danach schwächere Runden folgen.")}
       </>)}
 
       {card(<>
