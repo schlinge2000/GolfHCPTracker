@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   applyBeginnerRetention,
   BEGINNER_RETENTION_MAX,
+  buildIndexTimeline,
   calcHcp,
   calcRawScoreDiff,
   calcScoreDiff,
+  exceptionalScoreReduction,
   getHandicapRule,
 } from "./hcpMath";
 
@@ -275,5 +277,62 @@ describe("golf.de scoring record 20.07.2026 – official HCPI with beginner rete
     }
     // current nach R11 selbst + Fortschreibung R10..R1
     expect([replayWithRetention(fromRound11), ...progression]).toEqual(golfDeAfter);
+  });
+});
+
+describe("exceptional score reduction (WHS 5.9)", () => {
+  it.each([
+    { prev: 45.6, raw: 32.4, expected: 2.0 }, // 13.2 darunter -> -2.0 (die 109)
+    { prev: 30.1, raw: 22.5, expected: 1.0 }, // 7.6 darunter -> -1.0
+    { prev: 30.1, raw: 20.1, expected: 2.0 }, // 10.0 darunter -> -2.0
+    { prev: 30.1, raw: 24.0, expected: 0 },   // 6.1 darunter -> keine Reduktion
+    { prev: 30.1, raw: 29.8, expected: 0 },
+  ])("prev $prev, raw $raw -> reduction $expected", ({ prev, raw, expected }) => {
+    expect(exceptionalScoreReduction(prev, raw)).toBe(expected);
+  });
+});
+
+describe("buildIndexTimeline reproduces the full golf.de progression (all 15 rounds)", () => {
+  // Vollständige chronologische Engine: Rohdifferenzial -> Exceptional Score
+  // (zum Ereigniszeitpunkt) -> Bremse. Muss golf.de Runde für Runde treffen.
+  const golfDeAfter = [54.0, 53.4, 48.4, 45.6, 30.4, 30.4, 30.4, 30.1, 30.1, 30.1, 30.1, 30.1, 30.1, 30.1, 30.1];
+
+  const steps = buildIndexTimeline(scoringRecord2026, 54);
+
+  it("keeps every round (none dropped)", () => {
+    expect(steps).toHaveLength(scoringRecord2026.length);
+  });
+
+  it.each(scoringRecord2026.map((r, i) => ({ nr: r.nr, i, before: r.hcpiBefore })))(
+    "round #$nr: index before the round matches golf.de ($before)",
+    ({ i, before }) => {
+      expect(steps[i].preRoundHcp).toBe(before);
+    },
+  );
+
+  it.each(scoringRecord2026.map((r, i) => ({ nr: r.nr, i, after: golfDeAfter[i] })))(
+    "round #$nr: index after the round matches golf.de ($after)",
+    ({ i, after }) => {
+      expect(steps[i].hcpAfter).toBe(after);
+    },
+  );
+
+  it.each(scoringRecord2026.map((r, i) => ({ nr: r.nr, i, sd: r.reportedSD })))(
+    "round #$nr: final differential matches golf.de SD ($sd, incl. exceptional-score reduction)",
+    ({ i, sd }) => {
+      expect(steps[i].diff).toBe(sd);
+    },
+  );
+
+  it("ends at the official golf.de HCPI of 30.1", () => {
+    expect(steps[steps.length - 1].hcpAfter).toBe(30.1);
+  });
+
+  it("respects chronology: the -2 hits only from the exceptional round onward, not the raw values before it", () => {
+    // Rohdifferenziale bleiben unangetastet; erst das Fenster wird reduziert.
+    expect(steps[0].rawDiff).toBe(56.0); // Platzreife roh
+    expect(steps[0].diff).toBe(54.0);    // final nach -2 (durch die spätere 109)
+    expect(steps[4].rawDiff).toBe(32.4); // die 109 roh
+    expect(steps[4].diff).toBe(30.4);    // final nach eigener -2
   });
 });

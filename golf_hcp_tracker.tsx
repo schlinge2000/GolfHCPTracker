@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperti
 import { createPortal } from "react-dom";
 import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
-import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention } from "./src/hcpMath";
+import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline } from "./src/hcpMath";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -474,7 +474,9 @@ function buildProjectedHandicap({recentDiffs, currentHcp, round}) {
   const diff = calcScoreDiff(round, currentHcp);
   if (diff===null) return null;
 
-  const nextDiffs = [...recentDiffs, diff].slice(-20);
+  // Ausnahmerunde: senkt ggf. das gesamte aktuelle Fenster (WHS 5.9).
+  const reduction = exceptionalScoreReduction(currentHcp, diff);
+  const nextDiffs = [...recentDiffs, diff].slice(-20).map(d=>reduction>0 ? round1(d - reduction) : d);
   const base = calcHcp(nextDiffs);
   const nextHcp = base === null ? currentHcp : applyBeginnerRetention(base, currentHcp);
   const rule = getHandicapRule(nextDiffs.length);
@@ -517,18 +519,16 @@ function getLatestRoundDate(rounds) {
 
 function buildHandicapTimeline(rounds, startHcp) {
   const eligibleRounds = [...rounds].filter(isHcpEligible).sort(sortRoundsChronologically);
-  const diffs = [];
-  let currentHcp = Math.min(54, Math.max(0, parseFloat(startHcp) || 54));
-
-  return eligibleRounds.map(round=>{
-    const preRoundHcp = currentHcp;
-    const diff = calcScoreDiff(round, preRoundHcp);
-    if (diff===null) return null;
-    diffs.push(diff);
-    const base = calcHcp(diffs);
-    currentHcp = base === null ? currentHcp : applyBeginnerRetention(base, preRoundHcp);
-    return { round, diff, hcpAfter: currentHcp, preRoundHcp };
-  }).filter(Boolean);
+  const start = Math.min(54, Math.max(0, parseFloat(startHcp) || 54));
+  // Chronologische WHS-Engine: Rohdifferenzial -> Exceptional-Score-Reduktion
+  // zum Ereigniszeitpunkt -> Bremse. Dadurch stimmen auch die historischen
+  // Zwischenstände und nicht nur der aktuelle Index.
+  return buildIndexTimeline(eligibleRounds, start).map(step=>({
+    round: step.round,
+    diff: step.diff,
+    hcpAfter: step.hcpAfter,
+    preRoundHcp: step.preRoundHcp,
+  }));
 }
 
 function deriveNineHolePhcpFactor(rounds, startHcp, courseId) {
@@ -1680,9 +1680,9 @@ function HcpInfo() {
 
       {card(<>
         {h("Weitere WHS-Anpassungen")}
-        {p("Das World Handicap System kennt Korrekturen über den reinen Mittelwert hinaus. Bei golf.de-PDF-Import stecken PCC und Exceptional Score bereits im übernommenen Differenzial; bei manueller Eingabe rechnet die App mit PCC 0 und ohne Exceptional-Score-Reduktion. Die DGV-Anfängerregel (Bremse) bildet die App dagegen ab.")}
+        {p("Das World Handicap System kennt Korrekturen über den reinen Mittelwert hinaus. Die App verarbeitet die Runden chronologisch und bildet dabei Exceptional Score und die DGV-Anfängerregel (Bremse) mit ab. PCC wird als 0 angenommen (bei golf.de-Import steckt eine Platzverhältnis-Korrektur bereits im Bruttoergebnis).")}
         {p("• PCC (Playing Conditions Calculation): tagesbezogene Platzverhältnis-Korrektur des Differenzials.")}
-        {p("• Exceptional Score (Regel 5.9): liegt ein Differenzial 7,0–9,9 Schläge unter dem Index, werden alle aktuellen Differenziale um 1,0 gesenkt, bei 10,0 oder mehr um 2,0 – rückwirkend auf den gesamten Record.")}
+        {p("• Exceptional Score (Regel 5.9): liegt ein Differenzial 7,0–9,9 Schläge unter dem Index, werden alle aktuellen Differenziale um 1,0 gesenkt, bei 10,0 oder mehr um 2,0. Entscheidend ist der Zeitpunkt: Die Reduktion greift ab der Ausnahmerunde und wirkt auf die dann vorhandenen Differenziale – deshalb ist die chronologische Reihenfolge (auch beim Import) wichtig.")}
         {p("• Bremse (DGV-Anfängerregel): Solange dein Handicap-Index über 26,9 liegt, kann er nur besser werden – ein einmal erspielter Index wird nicht wieder angehoben. Ab 26,9 bewegt er sich normal in beide Richtungen. Deshalb bleibt z. B. ein nach einer starken Runde erspielter Index bestehen, auch wenn danach schwächere Runden folgen.")}
       </>)}
 
