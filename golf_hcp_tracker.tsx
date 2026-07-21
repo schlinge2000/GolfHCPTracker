@@ -1165,8 +1165,17 @@ function RoundRow({round:r, onEdit=()=>{}, onDelete=()=>{}, compact=false, count
 
 function RoundList({rounds, courses, onNew, onEdit, onDelete, countingIds, diffByRoundId}) {
   const [filter, setFilter] = useState("all");
+  const [sortKey, setSortKey] = useState("date"); // "date" | "sd"
+  const [sortDir, setSortDir] = useState("desc");  // "asc" | "desc"
   const hcpEligible = rounds.filter(isHcpEligible);
   const take = hcpEligible.length > 0 ? getHandicapRule(Math.min(hcpEligible.length, 20)).take : 0;
+
+  const toggleSort = (key) => {
+    if (sortKey===key) { setSortDir(d=>d==="asc"?"desc":"asc"); return; }
+    setSortKey(key);
+    // SD/Brutto: niedrigstes (bestes) zuerst; Platz: A→Z; Datum: neuestes zuerst
+    setSortDir((key==="sd"||key==="gross"||key==="course") ? "asc" : "desc");
+  };
 
   const filtered = rounds.filter(r=>{
     if (filter==="hcp") return isHcpEligible(r);
@@ -1174,18 +1183,61 @@ function RoundList({rounds, courses, onNew, onEdit, onDelete, countingIds, diffB
     if (filter==="counting") return countingIds.has(r.id);
     return true;
   });
+
+  const dir = sortDir==="asc" ? 1 : -1;
+  // Numerische Sortierung; fehlende Werte (null) landen immer am Ende.
+  const byNumber = (va, vb) => {
+    const aN=va===null||va===undefined, bN=vb===null||vb===undefined;
+    if (aN && bN) return null;
+    if (aN) return 1;
+    if (bN) return -1;
+    return va!==vb ? (va-vb)*dir : null;
+  };
+  const visible = [...filtered].sort((a,b)=>{
+    if (sortKey==="sd") {
+      const cmp=byNumber(diffByRoundId.get(a.id), diffByRoundId.get(b.id));
+      if (cmp!==null) return cmp;
+      return (b.date||"").localeCompare(a.date||"");
+    }
+    if (sortKey==="gross") {
+      const cmp=byNumber(getGrossScore(a), getGrossScore(b));
+      if (cmp!==null) return cmp;
+      return (b.date||"").localeCompare(a.date||"");
+    }
+    if (sortKey==="course") {
+      const cmp=(a.courseName||"").localeCompare(b.courseName||"");
+      if (cmp!==0) return cmp*dir;
+      return (b.date||"").localeCompare(a.date||"");
+    }
+    const cmp=(a.date||"").localeCompare(b.date||"");
+    if (cmp!==0) return cmp*dir;
+    return ((a.id||0)-(b.id||0))*dir;
+  });
+
+  const arrow = key => sortKey===key ? (sortDir==="asc" ? " ↑" : " ↓") : "";
+  const sortBtn = (key,label)=>(
+    <button key={key} onClick={()=>toggleSort(key)} style={{fontSize:12,padding:"4px 10px",borderRadius:"var(--border-radius-md)",background:sortKey===key?"rgba(29,158,117,0.12)":"transparent",color:sortKey===key?COLORS.hcp:"var(--color-text-secondary)",border:`0.5px solid ${sortKey===key?COLORS.hcp:"var(--color-border-tertiary)"}`,cursor:"pointer",fontWeight:sortKey===key?600:400}}>{label}{arrow(key)}</button>
+  );
+
   return (
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-        <div style={{display:"flex",gap:6}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:12,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {[["all","Alle"],["hcp","HCP-wirksam"],["counting",`Zählt aktuell (${take})`],["no_hcp","Nicht wirksam"]].map(([v,l])=>(
             <button key={v} onClick={()=>setFilter(v)} style={{fontSize:12,padding:"4px 10px",borderRadius:"var(--border-radius-md)",background:filter===v?COLORS.hcp:"transparent",color:filter===v?"#fff":"var(--color-text-secondary)",border:`0.5px solid ${filter===v?COLORS.hcp:"var(--color-border-tertiary)"}`,cursor:"pointer"}}>{l}</button>
           ))}
         </div>
         <button onClick={onNew} style={{padding:"8px 14px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:500}}>+ Neue Runde</button>
       </div>
-      {filtered.length===0 && <div style={{color:"var(--color-text-secondary)",fontSize:14,padding:"24px 0"}}>Keine Runden gefunden.</div>}
-      {filtered.map(r=><RoundRow key={r.id} round={r} onEdit={()=>onEdit(r)} onDelete={()=>onDelete(r.id)} counting={countingIds.has(r.id)} diffByRoundId={diffByRoundId}/>)}
+      <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:14,flexWrap:"wrap"}}>
+        <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>Sortieren:</span>
+        {sortBtn("date","Datum")}
+        {sortBtn("sd","SD")}
+        {sortBtn("gross","Brutto")}
+        {sortBtn("course","Platz")}
+      </div>
+      {visible.length===0 && <div style={{color:"var(--color-text-secondary)",fontSize:14,padding:"24px 0"}}>Keine Runden gefunden.</div>}
+      {visible.map(r=><RoundRow key={r.id} round={r} onEdit={()=>onEdit(r)} onDelete={()=>onDelete(r.id)} counting={countingIds.has(r.id)} diffByRoundId={diffByRoundId}/>)}
     </div>
   );
 }
@@ -1479,8 +1531,11 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTime
         </div>
       ) : (
         <div>
-          <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>{recentTitle}</div>
-          {rounds.slice(0,8).map(r=><RoundRow key={r.id} round={r} compact diffByRoundId={diffByRoundId}/>)}
+          <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:10}}>
+            <div style={{fontSize:14,fontWeight:500}}>{recentTitle}</div>
+            {rounds.length>3 && <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>letzte 3 · alle unter „Runden“</div>}
+          </div>
+          {rounds.slice(0,3).map(r=><RoundRow key={r.id} round={r} compact diffByRoundId={diffByRoundId}/>)}
         </div>
       )}
     </div>
