@@ -1173,7 +1173,8 @@ function RoundList({rounds, courses, onNew, onEdit, onDelete, countingIds, diffB
   const toggleSort = (key) => {
     if (sortKey===key) { setSortDir(d=>d==="asc"?"desc":"asc"); return; }
     setSortKey(key);
-    setSortDir(key==="sd" ? "asc" : "desc"); // SD: bestes zuerst; Datum: neuestes zuerst
+    // SD/Brutto: niedrigstes (bestes) zuerst; Platz: A→Z; Datum: neuestes zuerst
+    setSortDir((key==="sd"||key==="gross"||key==="course") ? "asc" : "desc");
   };
 
   const filtered = rounds.filter(r=>{
@@ -1184,14 +1185,28 @@ function RoundList({rounds, courses, onNew, onEdit, onDelete, countingIds, diffB
   });
 
   const dir = sortDir==="asc" ? 1 : -1;
+  // Numerische Sortierung; fehlende Werte (null) landen immer am Ende.
+  const byNumber = (va, vb) => {
+    const aN=va===null||va===undefined, bN=vb===null||vb===undefined;
+    if (aN && bN) return null;
+    if (aN) return 1;
+    if (bN) return -1;
+    return va!==vb ? (va-vb)*dir : null;
+  };
   const visible = [...filtered].sort((a,b)=>{
     if (sortKey==="sd") {
-      const da=diffByRoundId.get(a.id), db=diffByRoundId.get(b.id);
-      const aN=da===null||da===undefined, bN=db===null||db===undefined;
-      if (aN && bN) return (b.date||"").localeCompare(a.date||"");
-      if (aN) return 1;  // Runden ohne Differenzial immer ans Ende
-      if (bN) return -1;
-      if (da!==db) return (da-db)*dir;
+      const cmp=byNumber(diffByRoundId.get(a.id), diffByRoundId.get(b.id));
+      if (cmp!==null) return cmp;
+      return (b.date||"").localeCompare(a.date||"");
+    }
+    if (sortKey==="gross") {
+      const cmp=byNumber(getGrossScore(a), getGrossScore(b));
+      if (cmp!==null) return cmp;
+      return (b.date||"").localeCompare(a.date||"");
+    }
+    if (sortKey==="course") {
+      const cmp=(a.courseName||"").localeCompare(b.courseName||"");
+      if (cmp!==0) return cmp*dir;
       return (b.date||"").localeCompare(a.date||"");
     }
     const cmp=(a.date||"").localeCompare(b.date||"");
@@ -1218,6 +1233,8 @@ function RoundList({rounds, courses, onNew, onEdit, onDelete, countingIds, diffB
         <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>Sortieren:</span>
         {sortBtn("date","Datum")}
         {sortBtn("sd","SD")}
+        {sortBtn("gross","Brutto")}
+        {sortBtn("course","Platz")}
       </div>
       {visible.length===0 && <div style={{color:"var(--color-text-secondary)",fontSize:14,padding:"24px 0"}}>Keine Runden gefunden.</div>}
       {visible.map(r=><RoundRow key={r.id} round={r} onEdit={()=>onEdit(r)} onDelete={()=>onDelete(r.id)} counting={countingIds.has(r.id)} diffByRoundId={diffByRoundId}/>)}
@@ -1514,8 +1531,11 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTime
         </div>
       ) : (
         <div>
-          <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>{recentTitle}</div>
-          {rounds.slice(0,8).map(r=><RoundRow key={r.id} round={r} compact diffByRoundId={diffByRoundId}/>)}
+          <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:10}}>
+            <div style={{fontSize:14,fontWeight:500}}>{recentTitle}</div>
+            {rounds.length>3 && <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>letzte 3 · alle unter „Runden“</div>}
+          </div>
+          {rounds.slice(0,3).map(r=><RoundRow key={r.id} round={r} compact diffByRoundId={diffByRoundId}/>)}
         </div>
       )}
     </div>
