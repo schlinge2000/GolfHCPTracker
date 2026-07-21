@@ -1482,12 +1482,84 @@ function HcpSimulator({courses, rounds, startHcp, simulatedRounds, onAddRound, o
   );
 }
 
-function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTimeline, diffByRoundId, projectedStartIndex=null, simulatedRoundIds=new Set(), title=null, recentTitle="Letzte Runden", actionArea=null, emptyText="Noch keine Runden erfasst"}) {
+function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTimeline, diffByRoundId, projectedStartIndex=null, simulatedRoundIds=new Set(), title=null, recentTitle="Letzte Runden", actionArea=null, emptyText="Noch keine Runden erfasst", variant="full"}) {
   const avgDiff = recentDiffs.length?(recentDiffs.reduce((s,d)=>s+d,0)/recentDiffs.length).toFixed(1):null;
   const chartData = useMemo(()=>hcpTimeline.map((entry,i)=>({x:i+1,diff:entry.diff,mode:entry.round.mode,date:entry.round.date})),[hcpTimeline]);
   const trendData = useMemo(()=>hcpTimeline.map((entry,i)=>({i:i+1,hcp:entry.hcpAfter,date:entry.round.date})),[hcpTimeline]);
   const summaryCards = [["Runden gesamt",rounds.length],["HCP-wirksam",hcpRounds.length],["Ø Differenzial",avgDiff??"–"],["Bestes Diff",recentDiffs.length?Math.min(...recentDiffs).toFixed(1):"–"]];
   if (simulatedRoundIds.size) summaryCards.push(["Simuliert", simulatedRoundIds.size]);
+
+  // Wertungsfenster analysieren: die letzten 20 wertbaren Runden (nach Anzahl),
+  // davon zählen die besten `take`.
+  const windowEntries = hcpTimeline.slice(-20);
+  const n = windowEntries.length;
+  const windowFull = hcpTimeline.length >= 20;
+  const take = n>0 ? getHandicapRule(n).take : 0;
+  const newest = n ? windowEntries[n-1] : null;
+  const oldest = n ? windowEntries[0] : null;
+  const countingEntries = [...windowEntries].sort((a,b)=>a.diff-b.diff).slice(0,take);
+  const countingIds = new Set(countingEntries.map(e=>e.round.id));
+  const worstCounting = countingEntries.length ? countingEntries[countingEntries.length-1] : null;
+
+  const focusItem = (label, entry, note, accent) => (
+    <div style={{marginBottom:14}}>
+      <div style={{fontSize:11,fontWeight:600,color:accent||"var(--color-text-secondary)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>{label}</div>
+      {entry
+        ? <RoundRow round={entry.round} compact counting={countingIds.has(entry.round.id)} diffByRoundId={diffByRoundId}/>
+        : <div style={{fontSize:13,color:"var(--color-text-secondary)",padding:"4px 0"}}>–</div>}
+      {note && <div style={{fontSize:12,color:"var(--color-text-secondary)",marginTop:4,lineHeight:1.5}}>{note}</div>}
+    </div>
+  );
+
+  const emptyState = (
+    <div style={{textAlign:"center",padding:"40px 0",color:"var(--color-text-secondary)"}}>
+      <div style={{fontSize:32,marginBottom:12}}>⛳</div>
+      <div style={{fontSize:15,marginBottom:16}}>{emptyText}</div>
+      <button onClick={onNew} style={{padding:"10px 20px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:500,fontSize:14}}>Erste Runde erfassen</button>
+    </div>
+  );
+
+  const graphs = (chartData.length>0 || trendData.length>=2) ? (
+    <div style={{display:"grid",gridTemplateColumns:trendData.length>=2&&chartData.length>0?"1fr 1fr":"1fr",gap:16,marginBottom:24}}>
+      {chartData.length>0 && (
+        <div>
+          <div style={{fontSize:14,fontWeight:500,marginBottom:12}}>Score Differenzials</div>
+          <ScoreChart data={chartData} projectedStartIndex={projectedStartIndex}/>
+        </div>
+      )}
+      {trendData.length>=2 && (
+        <div>
+          <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>HCP-Entwicklung</div>
+          <HcpTrendChart trend={trendData} projectedStartIndex={projectedStartIndex}/>
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const focusSection = rounds.length===0 ? emptyState : n===0 ? (
+    <div style={{fontSize:13,color:"var(--color-text-secondary)",padding:"8px 0"}}>Noch keine HCP-wirksame Runde. Sobald eine Runde wertbar ist, erscheint hier die Wertungsübersicht.</div>
+  ) : (
+    <div>
+      <div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:12,lineHeight:1.5}}>
+        Deine HCP nutzt die besten {take} der letzten {n}{windowFull?"":" von 20"} wertbaren Runden. So verändert sie sich beim nächsten Ergebnis:
+      </div>
+      {focusItem("Letzte Runde", newest, newest?`Zuletzt gewertet am ${newest.round.date}.`:null, COLORS.hcp)}
+      {worstCounting && focusItem(
+        "Wird ersetzt, wenn besser",
+        worstCounting,
+        `Höchstes zählendes Differenzial (${worstCounting.diff.toFixed(1)}). Ein besseres Ergebnis verdrängt diese Runde aus den besten ${take}.`,
+        COLORS.stroke,
+      )}
+      {focusItem(
+        "Fällt als Nächstes aus dem Fenster",
+        oldest,
+        windowFull
+          ? "Älteste der letzten 20 wertbaren Runden – sie fällt mit dem nächsten neuen Ergebnis aus dem Wertungsfenster."
+          : `Aktuell fällt noch keine Runde heraus: erst ab 20 Runden im Fenster (derzeit ${n}). Dann würde diese älteste (${oldest?.round.date}) als Erste herausfallen.`,
+        "#8a6d1f",
+      )}
+    </div>
+  );
 
   return (
     <div>
@@ -1504,39 +1576,26 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTime
 
       {actionArea}
 
-      {hcpRounds.length>0 && <HcpRoundsTable rounds={hcpRounds} diffByRoundId={diffByRoundId} simulatedRoundIds={simulatedRoundIds}/>}
-
-      {(chartData.length>0 || trendData.length>=2) && (
-        <div style={{display:"grid",gridTemplateColumns:trendData.length>=2&&chartData.length>0?"1fr 1fr":"1fr",gap:16,marginBottom:24}}>
-          {chartData.length>0 && (
-            <div>
-              <div style={{fontSize:14,fontWeight:500,marginBottom:12}}>Score Differenzials</div>
-              <ScoreChart data={chartData} projectedStartIndex={projectedStartIndex}/>
-            </div>
-          )}
-          {trendData.length>=2 && (
-            <div>
-              <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>HCP-Entwicklung</div>
-              <HcpTrendChart trend={trendData} projectedStartIndex={projectedStartIndex}/>
-            </div>
-          )}
-        </div>
-      )}
-
-      {rounds.length===0 ? (
-        <div style={{textAlign:"center",padding:"40px 0",color:"var(--color-text-secondary)"}}>
-          <div style={{fontSize:32,marginBottom:12}}>⛳</div>
-          <div style={{fontSize:15,marginBottom:16}}>{emptyText}</div>
-          <button onClick={onNew} style={{padding:"10px 20px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:500,fontSize:14}}>Erste Runde erfassen</button>
-        </div>
+      {variant==="focus" ? (
+        <>
+          <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>Wertungsfenster</div>
+          <div style={{...subtleCardStyle,padding:"16px 18px",marginBottom:24}}>{focusSection}</div>
+          {graphs}
+        </>
       ) : (
-        <div>
-          <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:10}}>
-            <div style={{fontSize:14,fontWeight:500}}>{recentTitle}</div>
-            {rounds.length>3 && <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>letzte 3 · alle unter „Runden“</div>}
-          </div>
-          {rounds.slice(0,3).map(r=><RoundRow key={r.id} round={r} compact diffByRoundId={diffByRoundId}/>)}
-        </div>
+        <>
+          {hcpRounds.length>0 && <HcpRoundsTable rounds={hcpRounds} diffByRoundId={diffByRoundId} simulatedRoundIds={simulatedRoundIds}/>}
+          {graphs}
+          {rounds.length===0 ? emptyState : (
+            <div>
+              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:10}}>
+                <div style={{fontSize:14,fontWeight:500}}>{recentTitle}</div>
+                {rounds.length>3 && <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>letzte 3 · alle unter „Runden“</div>}
+              </div>
+              {rounds.slice(0,3).map(r=><RoundRow key={r.id} round={r} compact diffByRoundId={diffByRoundId}/>)}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -2017,7 +2076,7 @@ export default function App() {
         ))}
       </div>
 
-      {view==="dashboard" && <Dashboard rounds={sortedRounds} hcpRounds={hcpRounds} recentDiffs={recentDiffs} estimatedHcp={estimatedHcp} onNew={()=>{newRound();setView("rounds");}} hcpTimeline={hcpTimeline} diffByRoundId={diffByRoundId}/>}
+      {view==="dashboard" && <Dashboard rounds={sortedRounds} hcpRounds={hcpRounds} recentDiffs={recentDiffs} estimatedHcp={estimatedHcp} onNew={()=>{newRound();setView("rounds");}} hcpTimeline={hcpTimeline} diffByRoundId={diffByRoundId} variant="focus"/>}
       {view==="simulator" && <HcpSimulator courses={db.courses} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} simulatedRounds={db.simulatedRounds} onAddRound={saveSimulatedRound} onDeleteRound={deleteSimulatedRound} onClearRounds={clearSimulatedRounds}/>}
       {view==="rounds" && <RoundList rounds={sortedRounds} courses={db.courses} onNew={newRound} onEdit={r=>setForm({...r})} onDelete={id=>setDeleteConfirm(id)} countingIds={countingIds} diffByRoundId={diffByRoundId}/>}
       {view==="courses" && <CourseList courses={db.courses} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:"",nineHolePhcpFactor:0.5})} onEdit={c=>setCourseForm({...c})}/>}
