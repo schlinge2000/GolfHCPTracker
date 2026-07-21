@@ -1645,7 +1645,7 @@ function HcpInfo() {
         {formula("Differenzial = (GBE − Course Rating) × 113 ÷ Slope Rating")}
         {p("GBE = Gross Brutto Ergebnis (angepasstes Brutto-Score). Course Rating und Slope Rating stehen auf der Scorekarte des Platzes.")}
         {p("Beispiel: GBE 95, CR 72.0, SR 130 → (95 − 72) × 113 ÷ 130 = 20.0")}
-        {p("Im vollständigen WHS wird zusätzlich die Platzverhältnis-Korrektur PCC abgezogen: Differenzial = (GBE − Course Rating − PCC) × 113 ÷ Slope Rating. Bei golf.de-PDF-Import übernimmt die App das fertige Differenzial inklusive PCC direkt; bei manueller Eingabe wird PCC = 0 angenommen.")}
+        {p("Im vollständigen WHS wird zusätzlich die Platzverhältnis-Korrektur PCC abgezogen: Differenzial = (GBE − Course Rating − PCC) × 113 ÷ Slope Rating. Die App berechnet das Differenzial selbst aus GBE, Course Rating und Slope und rechnet dabei mit PCC = 0 (Details siehe „Weitere WHS-Anpassungen“).")}
         {formula("9-Loch: tatsächliches 9-Loch-Differenzial\n= (GBE − Course Rating) × 113 ÷ Slope Rating\n\n18-Loch-Wert = 9-Loch-Differenzial + erwartetes 9-Loch-Differenzial\naus dem aktuellen Handicap Index")}
       </>)}
 
