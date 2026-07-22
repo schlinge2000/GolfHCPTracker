@@ -896,14 +896,32 @@ function Modal({title, children, onClose, maxWidth=520}) {
   );
 }
 
+// Berechnet gerundete ("schöne") Achsengrenzen und Ticks, die sich eng an die
+// tatsächlichen Werte anlegen.
+function niceTicks(dataMin, dataMax, count=4) {
+  if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax)) return {min:0,max:1,ticks:[0,1]};
+  if (dataMin===dataMax) { dataMin-=1; dataMax+=1; }
+  const rawStep=(dataMax-dataMin)/Math.max(1,count);
+  const mag=Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm=rawStep/mag;
+  const step=(norm<1.5?1:norm<3?2:norm<7?5:10)*mag;
+  const min=Math.floor(dataMin/step)*step;
+  const max=Math.ceil(dataMax/step)*step;
+  const ticks=[];
+  for (let v=min; v<=max+step*0.5; v+=step) ticks.push(Math.round(v*100)/100);
+  return {min, max, ticks};
+}
+
 // Gemeinsame, responsive Linien-Chart-Basis mit Grid, projizierter (gestrichelter)
 // Linie und – im interaktiven Modus – Tooltips beim Überfahren/Antippen der Punkte.
-function LineChart({points, lineColor=COLORS.hcp, projectedColor="#C56B1A", yPad=1, width=680, height=200, interactive=false, valueFormat=(v)=>`${v}`}) {
+function LineChart({points, lineColor=COLORS.hcp, projectedColor="#C56B1A", width=680, height=200, interactive=false, valueFormat=(v)=>`${v}`}) {
   const [hover, setHover] = useState(null);
   const pad={t:16,r:20,b:32,l:44};
   const vals=points.map(p=>p.value);
   if (!vals.length) return null;
-  const min=Math.min(...vals)-yPad, max=Math.max(...vals)+yPad;
+  // y-Achse passt sich an die (gefensterten) Werte an – mit gerundeten Grenzen/Ticks.
+  const {min, max, ticks}=niceTicks(Math.min(...vals), Math.max(...vals), 4);
+  const fmtTick=v=>Number.isInteger(v)?String(v):v.toFixed(1);
   const times=points.map(p=>p.date);
   const tMin=Math.min(...times), tMax=Math.max(...times);
   const sx=t=>tMax===tMin ? pad.l+(width-pad.l-pad.r)/2 : pad.l+((t-tMin)/(tMax-tMin))*(width-pad.l-pad.r);
@@ -915,10 +933,10 @@ function LineChart({points, lineColor=COLORS.hcp, projectedColor="#C56B1A", yPad
   const hp = hover!==null ? points[hover] : null;
   return (
     <svg viewBox={`0 0 ${width} ${height}`} style={{width:"100%",height:"auto",display:"block"}} onMouseLeave={()=>setHover(null)}>
-      {[max,(min+max)/2,min].map((v,i)=>(
+      {ticks.map((v,i)=>(
         <g key={i}>
           <line x1={pad.l} x2={width-pad.r} y1={sy(v)} y2={sy(v)} stroke="#D3D1C7" strokeWidth={0.5}/>
-          <text x={pad.l-6} y={sy(v)+4} fontSize={10} textAnchor="end" fill="#888">{valueFormat(v)}</text>
+          <text x={pad.l-6} y={sy(v)+4} fontSize={10} textAnchor="end" fill="#888">{fmtTick(v)}</text>
         </g>
       ))}
       {hp && <line x1={sx(hp.date)} x2={sx(hp.date)} y1={pad.t} y2={height-pad.b} stroke="#B4B2A9" strokeWidth={0.5} strokeDasharray="3 3"/>}
@@ -957,7 +975,7 @@ function ScoreChart({data, projectedStartIndex=null, width=680, height=200, inte
     projected:projectedStartIndex!==null && i>=projectedStartIndex,
   }));
   if (!points.length) return null;
-  return <LineChart points={points} lineColor={COLORS.hcp} yPad={2} width={width} height={height} interactive={interactive} valueFormat={v=>v.toFixed(1)}/>;
+  return <LineChart points={points} lineColor={COLORS.hcp} width={width} height={height} interactive={interactive} valueFormat={v=>v.toFixed(1)}/>;
 }
 
 function HcpTrendChart({trend, projectedStartIndex=null, width=680, height=180, interactive=false}) {
@@ -967,7 +985,7 @@ function HcpTrendChart({trend, projectedStartIndex=null, width=680, height=180, 
     projected:projectedStartIndex!==null && i>=projectedStartIndex,
   }));
   if (!points.length) return null;
-  return <LineChart points={points} lineColor={COLORS.hcp} yPad={1} width={width} height={height} interactive={interactive} valueFormat={v=>v.toFixed(1)}/>;
+  return <LineChart points={points} lineColor={COLORS.hcp} width={width} height={height} interactive={interactive} valueFormat={v=>v.toFixed(1)}/>;
 }
 
 // Fenster-Regler für die Charts: nach Runden (max 20) oder Zeitraum (max 365 Tage).
