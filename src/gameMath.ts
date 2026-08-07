@@ -267,18 +267,22 @@ export function scoreMatchplay(
   scores: HoleScores[],
   allocations: Allocation[],
   holes: HoleInfo[],
+  /** Lochbereich [from, to) – für Nassau-Teilwetten. Standard: die ganze Runde. */
+  range?: { from: number; to: number },
 ): MatchplayResult {
   const byId = allocationById(allocations);
   const allocA = byId.get(playerA);
   const allocB = byId.get(playerB);
-  const holeCount = holes.length;
+  const from = Math.max(0, range?.from ?? 0);
+  const to = Math.min(holes.length, range?.to ?? holes.length);
+  const holeCount = Math.max(0, to - from);
 
   const result: MatchplayHole[] = [];
   let status = 0;
   let played = 0;
   let decidedAtHole: number | null = null;
 
-  for (let index = 0; index < holeCount; index += 1) {
+  for (let index = from; index < to; index += 1) {
     const netA = netAt(scores, index, allocA);
     const netB = netAt(scores, index, allocB);
     const bothPlayed = netA !== null && netB !== null;
@@ -297,14 +301,14 @@ export function scoreMatchplay(
     result.push({ holeIndex: index, netA, netB, winner, statusAfter: status, afterDecision });
 
     if (decidedAtHole === null && bothPlayed) {
-      const remaining = holeCount - (index + 1);
+      const remaining = to - (index + 1);
       if (Math.abs(status) > remaining) decidedAtHole = index;
     }
   }
 
   const remainingHoles = Math.max(0, holeCount - played);
   const decided = decidedAtHole !== null;
-  const complete = decided || played === holeCount;
+  const complete = holeCount > 0 && (decided || played === holeCount);
   const winner = complete && status !== 0 ? (status > 0 ? "a" : "b") : null;
 
   const lead = Math.abs(status);
@@ -315,7 +319,7 @@ export function scoreMatchplay(
     if (status === 0) {
       resultLabel = "Geteilt (A/S)";
     } else {
-      const holesLeft = holeCount - ((decidedAtHole ?? holeCount - 1) + 1);
+      const holesLeft = to - ((decidedAtHole ?? to - 1) + 1);
       resultLabel = holesLeft > 0 ? `${lead} & ${holesLeft}` : `${lead} auf`;
     }
   }
@@ -400,6 +404,266 @@ export function scoreSkins(
   }
 
   return { holes: result, totals, openCarry: carry };
+}
+
+// ---------------------------------------------------------------------------
+// Nassau
+// ---------------------------------------------------------------------------
+
+export type NassauPress = {
+  /** 0-basiertes Loch, ab dem die Zusatzwette läuft. */
+  from: number;
+  /** Segment, dessen Restlöcher bespielt werden. */
+  segment: "front" | "back" | "total";
+};
+
+export type NassauBet = {
+  key: string;
+  label: string;
+  from: number;
+  to: number;
+  press: boolean;
+  result: MatchplayResult;
+};
+
+export type NassauResult = {
+  bets: NassauBet[];
+  /** Gewonnene Wetten je Seite. */
+  totals: { a: number; b: number };
+};
+
+/** Grundsegmente einer Nassau-Runde. Unter 18 Löchern gibt es nur eine Wette. */
+export function nassauSegments(holeCount: number): { key: NassauPress["segment"]; label: string; from: number; to: number }[] {
+  if (holeCount < 18) return [{ key: "total", label: "Gesamt", from: 0, to: holeCount }];
+  return [
+    { key: "front", label: "Front 9", from: 0, to: 9 },
+    { key: "back", label: "Back 9", from: 9, to: 18 },
+    { key: "total", label: "Gesamt", from: 0, to: 18 },
+  ];
+}
+
+/**
+ * Nassau: Front 9, Back 9 und Gesamt sind drei getrennte Lochspiele. Ein Press
+ * eröffnet eine zusätzliche Wette über die Restlöcher seines Segments und wird
+ * bewusst nur manuell gesetzt.
+ */
+export function scoreNassau(
+  playerA: string,
+  playerB: string,
+  scores: HoleScores[],
+  allocations: Allocation[],
+  holes: HoleInfo[],
+  presses: NassauPress[] = [],
+): NassauResult {
+  const segments = nassauSegments(holes.length);
+  const bets: NassauBet[] = segments.map(segment => ({
+    key: segment.key,
+    label: segment.label,
+    from: segment.from,
+    to: segment.to,
+    press: false,
+    result: scoreMatchplay(playerA, playerB, scores, allocations, holes, { from: segment.from, to: segment.to }),
+  }));
+
+  for (const press of presses) {
+    const segment = segments.find(entry => entry.key === press.segment);
+    if (!segment) continue;
+    const from = Math.max(segment.from, press.from);
+    if (from >= segment.to) continue;
+    bets.push({
+      key: `${press.segment}-press-${from}`,
+      label: `${segment.label} Press ab Loch ${from + 1}`,
+      from,
+      to: segment.to,
+      press: true,
+      result: scoreMatchplay(playerA, playerB, scores, allocations, holes, { from, to: segment.to }),
+    });
+  }
+
+  const totals = { a: 0, b: 0 };
+  for (const bet of bets) {
+    if (!bet.result.complete || !bet.result.winner) continue;
+    totals[bet.result.winner] += 1;
+  }
+
+  return { bets, totals };
+}
+
+// ---------------------------------------------------------------------------
+// Wolf
+// ---------------------------------------------------------------------------
+
+export type WolfChoice = {
+  /** Gewählter Partner, oder null/undefined für Lone Wolf. */
+  partnerId?: string | null;
+  /** Blind Wolf ("Pig"): schon vor dem ersten Abschlag allein angesagt. */
+  blind?: boolean;
+};
+
+export type WolfHole = {
+  holeIndex: number;
+  wolfId: string | null;
+  partnerId: string | null;
+  lone: boolean;
+  blind: boolean;
+  wolfTeam: string[];
+  opponents: string[];
+  wolfBest: number | null;
+  opponentBest: number | null;
+  outcome: "wolf" | "opponents" | "halved" | null;
+  points: Record<string, number>;
+};
+
+export type WolfResult = {
+  holes: WolfHole[];
+  totals: Record<string, number>;
+  /** Löcher, auf denen nicht mehr rotiert, sondern nach Punktstand bestimmt wird. */
+  rotationHoles: number;
+};
+
+/**
+ * Wolf. Die Abschlagreihenfolge rotiert, der Wolf wählt nach den Abschlägen
+ * einen Partner oder spielt allein.
+ *
+ * Punkte:
+ *   Wolf + Partner gewinnen -> beide je 1
+ *   Gegenseite gewinnt      -> jeder Gegner je 1
+ *   Lone Wolf gewinnt       -> 3   (Blind Wolf: 4)
+ *   Lone Wolf verliert      -> jeder andere je 1   (Blind Wolf: je 2)
+ *   Geteiltes Loch          -> keine Punkte
+ *
+ * Die Rotation geht nur so lange auf, wie die Lochzahl durch die Spielerzahl
+ * teilbar ist. Für die Restlöcher (bei vier Spielern also 17 und 18) ist der
+ * Spieler mit den wenigsten Punkten Wolf.
+ */
+export function scoreWolf(
+  playerIds: string[],
+  scores: HoleScores[],
+  allocations: Allocation[],
+  holes: HoleInfo[],
+  choices: WolfChoice[] = [],
+): WolfResult {
+  const byId = allocationById(allocations);
+  const playerCount = playerIds.length;
+  const holeCount = holes.length;
+  const totals: Record<string, number> = {};
+  for (const id of playerIds) totals[id] = 0;
+
+  const rotationHoles = playerCount > 0 ? Math.floor(holeCount / playerCount) * playerCount : 0;
+  const result: WolfHole[] = [];
+
+  for (let index = 0; index < holeCount; index += 1) {
+    if (playerCount < 3) {
+      result.push({
+        holeIndex: index, wolfId: null, partnerId: null, lone: false, blind: false,
+        wolfTeam: [], opponents: [], wolfBest: null, opponentBest: null, outcome: null, points: {},
+      });
+      continue;
+    }
+
+    const wolfId = index < rotationHoles
+      ? playerIds[index % playerCount]
+      // Restlöcher: schlechtester Punktstand wird Wolf, bei Gleichstand der
+      // in der Abschlagreihenfolge frühere Spieler.
+      : playerIds.reduce((worst, id)=>(totals[id] < totals[worst] ? id : worst), playerIds[0]);
+
+    const choice = choices[index] || {};
+    const partnerId = choice.partnerId && choice.partnerId !== wolfId && playerIds.includes(choice.partnerId)
+      ? choice.partnerId
+      : null;
+    const lone = partnerId === null;
+    const blind = lone && Boolean(choice.blind);
+
+    const wolfTeam = lone ? [wolfId] : [wolfId, partnerId as string];
+    const opponents = playerIds.filter(id=>!wolfTeam.includes(id));
+
+    const bestNet = (ids: string[]) => {
+      const nets = ids.map(id=>netAt(scores, index, byId.get(id))).filter((net): net is number => net !== null);
+      return nets.length === ids.length && nets.length > 0 ? Math.min(...nets) : null;
+    };
+    const wolfBest = bestNet(wolfTeam);
+    const opponentBest = bestNet(opponents);
+
+    let outcome: WolfHole["outcome"] = null;
+    const points: Record<string, number> = {};
+    if (wolfBest !== null && opponentBest !== null) {
+      if (wolfBest < opponentBest) {
+        outcome = "wolf";
+        if (lone) points[wolfId] = blind ? 4 : 3;
+        else for (const id of wolfTeam) points[id] = 1;
+      } else if (opponentBest < wolfBest) {
+        outcome = "opponents";
+        const award = lone ? (blind ? 2 : 1) : 1;
+        for (const id of opponents) points[id] = award;
+      } else {
+        outcome = "halved";
+      }
+      for (const [id, value] of Object.entries(points)) totals[id] += value;
+    }
+
+    result.push({ holeIndex: index, wolfId, partnerId, lone, blind, wolfTeam, opponents, wolfBest, opponentBest, outcome, points });
+  }
+
+  return { holes: result, totals, rotationHoles };
+}
+
+// ---------------------------------------------------------------------------
+// Bingo Bango Bongo
+// ---------------------------------------------------------------------------
+
+export type BbbAwards = {
+  /** Zuerst auf dem Grün. */
+  bingo?: string | null;
+  /** Am nächsten zur Fahne, sobald alle auf dem Grün liegen. */
+  bango?: string | null;
+  /** Zuerst eingelocht. */
+  bongo?: string | null;
+};
+
+export const BBB_AWARDS: { key: keyof BbbAwards; label: string; hint: string }[] = [
+  { key: "bingo", label: "Bingo", hint: "zuerst auf dem Grün" },
+  { key: "bango", label: "Bango", hint: "am nächsten zur Fahne" },
+  { key: "bongo", label: "Bongo", hint: "zuerst eingelocht" },
+];
+
+export type BbbResult = {
+  holes: { holeIndex: number; awards: BbbAwards; points: number }[];
+  totals: Record<string, number>;
+  /** Zählung je Kategorie, für die Auswertung nach der Runde. */
+  byAward: Record<string, { bingo: number; bango: number; bongo: number }>;
+};
+
+/**
+ * Bingo Bango Bongo: drei Punkte pro Loch, die sich nicht aus der Schlagzahl
+ * ableiten lassen und deshalb direkt erfasst werden.
+ */
+export function scoreBingoBangoBongo(
+  playerIds: string[],
+  awards: BbbAwards[],
+  holeCount: number,
+): BbbResult {
+  const totals: Record<string, number> = {};
+  const byAward: BbbResult["byAward"] = {};
+  for (const id of playerIds) {
+    totals[id] = 0;
+    byAward[id] = { bingo: 0, bango: 0, bongo: 0 };
+  }
+
+  const holes: BbbResult["holes"] = [];
+  for (let index = 0; index < holeCount; index += 1) {
+    const entry = awards[index] || {};
+    let points = 0;
+    for (const award of BBB_AWARDS) {
+      const winner = entry[award.key];
+      if (!winner || !playerIds.includes(winner)) continue;
+      totals[winner] += 1;
+      byAward[winner][award.key] += 1;
+      points += 1;
+    }
+    holes.push({ holeIndex: index, awards: entry, points });
+  }
+
+  return { holes, totals, byAward };
 }
 
 // ---------------------------------------------------------------------------

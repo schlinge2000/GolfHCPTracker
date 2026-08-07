@@ -4,8 +4,11 @@ import {
   buildGameHandicaps,
   normalizeHoles,
   playedHoleCount,
+  scoreBingoBangoBongo,
   scoreMatchplay,
+  scoreNassau,
   scoreSkins,
+  scoreWolf,
   stablefordFromHoles,
   strokeAllocation,
   strokesForHole,
@@ -323,6 +326,232 @@ describe("scoreSkins", () => {
     // B bekommt überall einen Schlag: brutto 4 zu 4, netto 4 zu 3.
     const result = scoreSkins(["a", "b"], scoresFrom([{ a: 4, b: 4 }]), netAllocations, HOLES_18);
     expect(result.holes[0].winnerId).toBe("b");
+  });
+});
+
+describe("scoreMatchplay mit Lochbereich", () => {
+  const allocations = buildAllocations(
+    [{ id: "a", courseHandicap: 10 }, { id: "b", courseHandicap: 10 }],
+    HOLES_18,
+    { mode: "difference", percent: 100 },
+  );
+
+  it("wertet nur die Löcher des Bereichs", () => {
+    const scores: HoleScores[] = [];
+    for (let i = 0; i < 9; i += 1) scores.push({ a: 4, b: 5 });   // A gewinnt die Front 9
+    for (let i = 9; i < 18; i += 1) scores.push({ a: 5, b: 4 });  // B gewinnt die Back 9
+    const front = scoreMatchplay("a", "b", scores, allocations, HOLES_18, { from: 0, to: 9 });
+    const back = scoreMatchplay("a", "b", scores, allocations, HOLES_18, { from: 9, to: 18 });
+    expect(front.winner).toBe("a");
+    expect(back.winner).toBe("b");
+  });
+
+  it("nutzt die Vorgabenschläge des echten Lochs, nicht des Bereichsanfangs", () => {
+    const netAllocations = buildAllocations(
+      [{ id: "a", courseHandicap: 0 }, { id: "b", courseHandicap: 1 }],
+      HOLES_18,
+      { mode: "difference", percent: 100 },
+    );
+    // B bekommt genau einen Schlag – auf dem Loch mit Stroke Index 1 (Loch 4).
+    const strokeHole = HOLES_18.findIndex(hole => hole.si === 1);
+    expect(strokeHole).toBeGreaterThanOrEqual(0);
+    const scores: HoleScores[] = HOLES_18.map(() => ({ a: 4, b: 4 }));
+    const back = scoreMatchplay("a", "b", scores, netAllocations, HOLES_18, { from: 9, to: 18 });
+    // Loch 4 liegt in der Front 9, in der Back 9 gibt es damit keinen Schlag.
+    expect(strokeHole).toBeLessThan(9);
+    expect(back.status).toBe(0);
+  });
+
+  it("kürzt einen Bereich über das Rundenende hinaus", () => {
+    const scores: HoleScores[] = HOLES_9.map(() => ({ a: 4, b: 5 }));
+    const result = scoreMatchplay("a", "b", scores, allocations, HOLES_9, { from: 0, to: 99 });
+    expect(result.holes).toHaveLength(9);
+  });
+});
+
+describe("scoreNassau", () => {
+  const allocations = buildAllocations(
+    [{ id: "a", courseHandicap: 10 }, { id: "b", courseHandicap: 10 }],
+    HOLES_18,
+    { mode: "difference", percent: 100 },
+  );
+
+  it("legt Front 9, Back 9 und Gesamt an", () => {
+    const result = scoreNassau("a", "b", [], allocations, HOLES_18);
+    expect(result.bets.map(bet => bet.label)).toEqual(["Front 9", "Back 9", "Gesamt"]);
+  });
+
+  it("führt bei 9 Löchern nur eine Wette", () => {
+    const result = scoreNassau("a", "b", [], allocations, HOLES_9);
+    expect(result.bets).toHaveLength(1);
+    expect(result.bets[0].label).toBe("Gesamt");
+  });
+
+  it("zählt gewonnene Wetten je Seite", () => {
+    const scores: HoleScores[] = [];
+    for (let i = 0; i < 9; i += 1) scores.push({ a: 4, b: 5 });   // Front an A
+    for (let i = 9; i < 18; i += 1) scores.push({ a: 5, b: 4 });  // Back an B
+    const result = scoreNassau("a", "b", scores, allocations, HOLES_18);
+    // Front an A, Back an B, Gesamt geteilt.
+    expect(result.totals).toEqual({ a: 1, b: 1 });
+    expect(result.bets[2].result.resultLabel).toBe("Geteilt (A/S)");
+  });
+
+  it("eröffnet einen Press über die Restlöcher des Segments", () => {
+    const scores: HoleScores[] = [];
+    for (let i = 0; i < 3; i += 1) scores.push({ a: 5, b: 4 });   // B liegt 3 vorn
+    for (let i = 3; i < 9; i += 1) scores.push({ a: 4, b: 5 });   // A gewinnt den Rest
+    const result = scoreNassau("a", "b", scores, allocations, HOLES_18, [{ from: 3, segment: "front" }]);
+    const press = result.bets.find(bet => bet.press);
+    expect(press?.label).toBe("Front 9 Press ab Loch 4");
+    expect(press?.from).toBe(3);
+    expect(press?.to).toBe(9);
+    expect(press?.result.winner).toBe("a");
+    expect(result.bets[0].result.winner).toBe("a"); // 6:3 auf der Front insgesamt
+  });
+
+  it("ignoriert einen Press hinter dem Segmentende", () => {
+    const result = scoreNassau("a", "b", [], allocations, HOLES_18, [{ from: 12, segment: "front" }]);
+    expect(result.bets.some(bet => bet.press)).toBe(false);
+  });
+});
+
+describe("scoreWolf", () => {
+  const ids = ["a", "b", "c", "d"];
+  const allocations = buildAllocations(
+    ids.map(id => ({ id, courseHandicap: 10 })),
+    HOLES_18,
+    { mode: "difference", percent: 100 },
+  );
+
+  it("rotiert den Wolf über die Abschlagreihenfolge", () => {
+    const result = scoreWolf(ids, [], allocations, HOLES_18);
+    expect(result.holes.slice(0, 5).map(hole => hole.wolfId)).toEqual(["a", "b", "c", "d", "a"]);
+  });
+
+  it("bestimmt auf den Restlöchern den Punktletzten als Wolf", () => {
+    // a gewinnt Loch 1 als Lone Wolf, alle anderen Löcher werden geteilt.
+    const scores: HoleScores[] = HOLES_18.map((_, index) => (index === 0 ? { a: 3, b: 4, c: 4, d: 4 } : { a: 4, b: 4, c: 4, d: 4 }));
+    const result = scoreWolf(ids, scores, allocations, HOLES_18, [{ partnerId: null }]);
+    expect(result.rotationHoles).toBe(16);
+    // a hat 3 Punkte, b/c/d je 0 -> b ist als erster Punktletzter dran.
+    expect(result.holes[16].wolfId).toBe("b");
+  });
+
+  it("gibt Wolf und Partner je einen Punkt", () => {
+    const scores: HoleScores[] = [{ a: 4, b: 6, c: 5, d: 5 }];
+    const result = scoreWolf(ids, scores, allocations, HOLES_18, [{ partnerId: "b" }]);
+    expect(result.holes[0].outcome).toBe("wolf");
+    expect(result.totals).toMatchObject({ a: 1, b: 1, c: 0, d: 0 });
+  });
+
+  it("gibt bei verlorenem Team-Loch jedem Gegner einen Punkt", () => {
+    const scores: HoleScores[] = [{ a: 5, b: 5, c: 4, d: 6 }];
+    const result = scoreWolf(ids, scores, allocations, HOLES_18, [{ partnerId: "b" }]);
+    expect(result.holes[0].outcome).toBe("opponents");
+    expect(result.totals).toMatchObject({ a: 0, b: 0, c: 1, d: 1 });
+  });
+
+  it("gibt dem siegreichen Lone Wolf drei Punkte", () => {
+    const scores: HoleScores[] = [{ a: 3, b: 4, c: 4, d: 4 }];
+    const result = scoreWolf(ids, scores, allocations, HOLES_18, [{ partnerId: null }]);
+    expect(result.totals).toMatchObject({ a: 3, b: 0, c: 0, d: 0 });
+  });
+
+  it("gibt beim verlorenen Lone Wolf jedem anderen einen Punkt", () => {
+    const scores: HoleScores[] = [{ a: 5, b: 4, c: 6, d: 6 }];
+    const result = scoreWolf(ids, scores, allocations, HOLES_18, [{ partnerId: null }]);
+    expect(result.totals).toMatchObject({ a: 0, b: 1, c: 1, d: 1 });
+  });
+
+  it("verdoppelt Chance und Risiko beim Blind Wolf", () => {
+    const win = scoreWolf(ids, [{ a: 3, b: 4, c: 4, d: 4 }], allocations, HOLES_18, [{ partnerId: null, blind: true }]);
+    expect(win.totals.a).toBe(4);
+    const loss = scoreWolf(ids, [{ a: 5, b: 4, c: 6, d: 6 }], allocations, HOLES_18, [{ partnerId: null, blind: true }]);
+    expect(loss.totals).toMatchObject({ a: 0, b: 2, c: 2, d: 2 });
+  });
+
+  it("vergibt auf geteilten Löchern keine Punkte", () => {
+    const result = scoreWolf(ids, [{ a: 4, b: 5, c: 4, d: 5 }], allocations, HOLES_18, [{ partnerId: "b" }]);
+    expect(result.holes[0].outcome).toBe("halved");
+    expect(Object.values(result.totals).every(value => value === 0)).toBe(true);
+  });
+
+  it("wertet ein Loch erst, wenn alle Beteiligten erfasst sind", () => {
+    const result = scoreWolf(ids, [{ a: 3, b: 4, c: 4 }], allocations, HOLES_18, [{ partnerId: null }]);
+    expect(result.holes[0].outcome).toBeNull();
+    expect(result.totals.a).toBe(0);
+  });
+
+  it("ignoriert den Wolf als eigenen Partner", () => {
+    const result = scoreWolf(ids, [{ a: 3, b: 4, c: 4, d: 4 }], allocations, HOLES_18, [{ partnerId: "a" }]);
+    expect(result.holes[0].lone).toBe(true);
+    expect(result.totals.a).toBe(3);
+  });
+
+  it("entscheidet netto über den besseren Ball des Teams", () => {
+    const netAllocations = buildAllocations(
+      [{ id: "a", courseHandicap: 0 }, { id: "b", courseHandicap: 0 }, { id: "c", courseHandicap: 0 }, { id: "d", courseHandicap: 18 }],
+      HOLES_18,
+      { mode: "difference", percent: 100 },
+    );
+    // d bekommt überall einen Schlag und rettet mit netto 4 das Loch für sein Team.
+    const result = scoreWolf(ids, [{ a: 6, b: 6, c: 5, d: 5 }], netAllocations, HOLES_18, [{ partnerId: "d" }]);
+    expect(result.holes[0].wolfBest).toBe(4);
+    expect(result.holes[0].opponentBest).toBe(5);
+    expect(result.holes[0].outcome).toBe("wolf");
+  });
+
+  it("funktioniert auch mit drei und fünf Spielern", () => {
+    const three = ["a", "b", "c"];
+    const threeAlloc = buildAllocations(three.map(id => ({ id, courseHandicap: 10 })), HOLES_18, { mode: "difference", percent: 100 });
+    const threeResult = scoreWolf(three, [{ a: 3, b: 4, c: 4 }], threeAlloc, HOLES_18, [{ partnerId: null }]);
+    expect(threeResult.rotationHoles).toBe(18);
+    expect(threeResult.totals.a).toBe(3);
+
+    const five = ["a", "b", "c", "d", "e"];
+    const fiveAlloc = buildAllocations(five.map(id => ({ id, courseHandicap: 10 })), HOLES_18, { mode: "difference", percent: 100 });
+    const fiveResult = scoreWolf(five, [], fiveAlloc, HOLES_18);
+    expect(fiveResult.rotationHoles).toBe(15);
+    expect(fiveResult.holes.slice(0, 5).map(hole => hole.wolfId)).toEqual(five);
+  });
+
+  it("bleibt bei unter drei Spielern wirkungslos", () => {
+    const two = ["a", "b"];
+    const twoAlloc = buildAllocations(two.map(id => ({ id, courseHandicap: 10 })), HOLES_18, { mode: "difference", percent: 100 });
+    const result = scoreWolf(two, [{ a: 3, b: 5 }], twoAlloc, HOLES_18, [{ partnerId: null }]);
+    expect(result.holes[0].wolfId).toBeNull();
+    expect(result.totals).toEqual({ a: 0, b: 0 });
+  });
+});
+
+describe("scoreBingoBangoBongo", () => {
+  const ids = ["a", "b", "c"];
+
+  it("gibt je Kategorie einen Punkt", () => {
+    const result = scoreBingoBangoBongo(ids, [{ bingo: "a", bango: "b", bongo: "a" }], 18);
+    expect(result.totals).toMatchObject({ a: 2, b: 1, c: 0 });
+  });
+
+  it("schlüsselt die Kategorien für die Statistik auf", () => {
+    const result = scoreBingoBangoBongo(ids, [
+      { bingo: "a", bango: "a", bongo: "a" },
+      { bingo: "a", bango: "b", bongo: "c" },
+    ], 18);
+    expect(result.byAward.a).toEqual({ bingo: 2, bango: 1, bongo: 1 });
+    expect(result.byAward.c).toEqual({ bingo: 0, bango: 0, bongo: 1 });
+  });
+
+  it("ignoriert unbesetzte und unbekannte Spieler", () => {
+    const result = scoreBingoBangoBongo(ids, [{ bingo: null, bango: "x", bongo: "b" }], 18);
+    expect(result.holes[0].points).toBe(1);
+    expect(result.totals).toMatchObject({ a: 0, b: 1, c: 0 });
+  });
+
+  it("kommt mit fehlenden Löchern klar", () => {
+    const result = scoreBingoBangoBongo(ids, [], 18);
+    expect(result.holes).toHaveLength(18);
+    expect(Object.values(result.totals).every(value => value === 0)).toBe(true);
   });
 });
 

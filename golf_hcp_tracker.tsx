@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline } from "./src/hcpMath";
-import { suggestHoles, normalizeHoles, totalPar, buildAllocations, scoreMatchplay, scoreSkins, stablefordFromHoles, playedHoleCount, DEFAULT_HANDICAP_CONFIG } from "./src/gameMath";
+import { suggestHoles, normalizeHoles, totalPar, buildAllocations, scoreMatchplay, scoreSkins, scoreNassau, scoreWolf, scoreBingoBangoBongo, nassauSegments, BBB_AWARDS, stablefordFromHoles, playedHoleCount, DEFAULT_HANDICAP_CONFIG } from "./src/gameMath";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -73,6 +73,17 @@ function normalizeGame(game) {
     scores,
     formats: Array.isArray(game?.formats) ? game.formats : [],
     participants: Array.isArray(game?.participants) ? game.participants : [],
+    wolfChoices: Array.from({length: holeCount}, (_, index)=>{
+      const entry = Array.isArray(game?.wolfChoices) ? game.wolfChoices[index] : null;
+      return entry && typeof entry === "object" ? {partnerId: entry.partnerId ?? null, blind: Boolean(entry.blind)} : {partnerId:null, blind:false};
+    }),
+    bbbAwards: Array.from({length: holeCount}, (_, index)=>{
+      const entry = Array.isArray(game?.bbbAwards) ? game.bbbAwards[index] : null;
+      return entry && typeof entry === "object" ? {bingo: entry.bingo ?? null, bango: entry.bango ?? null, bongo: entry.bongo ?? null} : {bingo:null, bango:null, bongo:null};
+    }),
+    nassauPresses: Array.isArray(game?.nassauPresses)
+      ? game.nassauPresses.filter(press=>Number.isFinite(press?.from) && typeof press?.segment === "string")
+      : [],
     handicap: {
       mode: game?.handicap?.mode ?? DEFAULT_HANDICAP_CONFIG.mode,
       percent: Number.isFinite(parseFloat(game?.handicap?.percent)) ? parseFloat(game.handicap.percent) : DEFAULT_HANDICAP_CONFIG.percent,
@@ -81,6 +92,8 @@ function normalizeGame(game) {
       unit: game?.stake?.unit === "eur" ? "eur" : "points",
       skin: parseFloat(game?.stake?.skin) || 1,
       match: parseFloat(game?.stake?.match) || 1,
+      nassau: parseFloat(game?.stake?.nassau) || 1,
+      point: parseFloat(game?.stake?.point) || 1,
     },
     status: game?.status === "finished" ? "finished" : "running",
   };
@@ -1895,8 +1908,14 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTime
 
 const GAME_FORMATS = [
   {id:"matchplay", label:"Matchplay", hint:"1 gegen 1, Loch für Loch"},
+  {id:"nassau", label:"Nassau", hint:"Front 9, Back 9 und Gesamt als drei Wetten, Press per Knopf"},
   {id:"skins", label:"Skins", hint:"Jedes Loch ein Topf, Carry-over bei Gleichstand"},
+  {id:"wolf", label:"Wolf", hint:"Rotierender Wolf wählt Partner oder geht allein (3 bis 5 Spieler)"},
+  {id:"bbb", label:"Bingo Bango Bongo", hint:"Drei Punkte pro Loch, direkt im Loch-Screen angetippt"},
 ];
+
+/** Spielformate, die genau zwei Kontrahenten brauchen. */
+const DUEL_FORMATS = ["matchplay", "nassau"];
 
 const HANDICAP_MODES = [
   {id:"difference", label:"Netto – Differenz zum Besten", hint:"Lochspiel-Standard: der beste Spieler spielt Scratch"},
@@ -1958,12 +1977,21 @@ function useGameState(game) {
     );
     const allocationById = new Map(allocations.map(a=>[a.id, a]));
 
-    const hasMatchplay = game.formats.includes("matchplay") && Array.isArray(game.matchup) && game.matchup.length === 2;
-    const matchplay = hasMatchplay
+    const hasDuel = Array.isArray(game.matchup) && game.matchup.length === 2;
+    const matchplay = hasDuel && game.formats.includes("matchplay")
       ? scoreMatchplay(game.matchup[0], game.matchup[1], game.scores, allocations, game.holes)
+      : null;
+    const nassau = hasDuel && game.formats.includes("nassau")
+      ? scoreNassau(game.matchup[0], game.matchup[1], game.scores, allocations, game.holes, game.nassauPresses)
       : null;
     const skins = game.formats.includes("skins")
       ? scoreSkins(ids, game.scores, allocations, game.holes)
+      : null;
+    const wolf = game.formats.includes("wolf") && ids.length >= 3
+      ? scoreWolf(ids, game.scores, allocations, game.holes, game.wolfChoices)
+      : null;
+    const bbb = game.formats.includes("bbb")
+      ? scoreBingoBangoBongo(ids, game.bbbAwards, game.holeCount)
       : null;
 
     const played = playedHoleCount(game.scores, ids, game.holeCount);
@@ -1978,17 +2006,28 @@ function useGameState(game) {
       balances.set(winnerId, balances.get(winnerId) + game.stake.match);
       balances.set(loserId, balances.get(loserId) - game.stake.match);
     }
-    if (skins && ids.length > 1) {
-      const totalWon = ids.reduce((sum, id)=>sum + (skins.totals[id] || 0), 0);
-      for (const id of ids) {
-        const own = skins.totals[id] || 0;
-        balances.set(id, balances.get(id) + game.stake.skin * (ids.length * own - totalWon));
-      }
+    if (nassau) {
+      const [a, b] = game.matchup;
+      const delta = (nassau.totals.a - nassau.totals.b) * game.stake.nassau;
+      balances.set(a, balances.get(a) + delta);
+      balances.set(b, balances.get(b) - delta);
     }
+    // Punktespiele werden über den Abstand zum Feld verrechnet: wer einen Punkt
+    // holt, bekommt ihn von jedem anderen. Das bleibt in Summe bei null.
+    const settlePoints = (totals, stake)=>{
+      if (ids.length < 2) return;
+      const sum = ids.reduce((total, id)=>total + (totals[id] || 0), 0);
+      for (const id of ids) {
+        balances.set(id, balances.get(id) + stake * (ids.length * (totals[id] || 0) - sum));
+      }
+    };
+    if (skins) settlePoints(skins.totals, game.stake.skin);
+    if (wolf) settlePoints(wolf.totals, game.stake.point);
+    if (bbb) settlePoints(bbb.totals, game.stake.point);
 
     const balanceList = ids.map(id=>({id, name:nameById.get(id) || id, amount:balances.get(id) || 0}));
 
-    return {ids, nameById, allocations, allocationById, matchplay, skins, played, balanceList};
+    return {ids, nameById, allocations, allocationById, matchplay, nassau, skins, wolf, bbb, played, balanceList};
   }, [game]);
 }
 
@@ -2021,7 +2060,7 @@ function ScoreStepper({value, par, onChange}) {
 }
 
 function StrokeDots({strokes}) {
-  if (!strokes) return <span style={{fontSize:11,color:COLORS.textSec}}>–</span>;
+  if (!strokes) return null;
   if (strokes < 0) return <span style={{fontSize:11,color:"#9a5314",fontWeight:700}}>{strokes}</span>;
   return <span style={{fontSize:13,color:COLORS.hcp,letterSpacing:1,fontWeight:700}}>{"•".repeat(Math.min(strokes, 4))}</span>;
 }
@@ -2036,8 +2075,7 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
   const [handicapMode, setHandicapMode] = useState<"difference"|"full"|"gross">(DEFAULT_HANDICAP_CONFIG.mode);
   const [handicapPercent, setHandicapPercent] = useState(DEFAULT_HANDICAP_CONFIG.percent);
   const [stakeUnit, setStakeUnit] = useState("points");
-  const [skinStake, setSkinStake] = useState("1");
-  const [matchStake, setMatchStake] = useState("1");
+  const [stakes, setStakes] = useState({skin:"1", match:"1", nassau:"1", point:"1"});
   const [newName, setNewName] = useState("");
   const [newHcp, setNewHcp] = useState("");
 
@@ -2081,11 +2119,16 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
     }));
   }, [course, selected, handicapMode, handicapPercent, holes, holeCount, displayHcp]);
 
+  const needsDuel = formats.some(id=>DUEL_FORMATS.includes(id));
+  const duelLabel = formats.filter(id=>DUEL_FORMATS.includes(id))
+    .map(id=>GAME_FORMATS.find(format=>format.id === id)?.label).join(" / ");
+
   const problems = [];
   if (!course) problems.push("Bitte einen Platz wählen – Games brauchen Course Rating, Slope und die Scorekarte.");
   if (selected.length < 2) problems.push("Mindestens zwei Teilnehmer auswählen.");
   if (!formats.length) problems.push("Mindestens ein Spielformat aktivieren.");
-  if (formats.includes("matchplay") && effectiveMatchup.length !== 2) problems.push("Für Matchplay genau zwei Kontrahenten markieren.");
+  if (needsDuel && effectiveMatchup.length !== 2) problems.push(`Für ${duelLabel} genau zwei Kontrahenten markieren.`);
+  if (formats.includes("wolf") && (selected.length < 3 || selected.length > 5)) problems.push("Wolf braucht drei bis fünf Teilnehmer.");
 
   const start = () => {
     if (problems.length) return;
@@ -2100,8 +2143,17 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
       holes,
       handicap: {mode:handicapMode, percent:handicapPercent},
       formats,
-      matchup: formats.includes("matchplay") ? effectiveMatchup : [],
-      stake: {unit:stakeUnit, skin:parseFloat(skinStake) || 1, match:parseFloat(matchStake) || 1},
+      matchup: needsDuel ? effectiveMatchup : [],
+      wolfChoices: Array.from({length:holeCount},()=>({partnerId:null, blind:false})),
+      bbbAwards: Array.from({length:holeCount},()=>({bingo:null, bango:null, bongo:null})),
+      nassauPresses: [],
+      stake: {
+        unit: stakeUnit,
+        skin: parseFloat(stakes.skin) || 1,
+        match: parseFloat(stakes.match) || 1,
+        nassau: parseFloat(stakes.nassau) || 1,
+        point: parseFloat(stakes.point) || 1,
+      },
       participants: selected.map(player=>({
         playerId: String(player.id),
         name: player.isMe ? (player.name || profileName) : player.name,
@@ -2172,7 +2224,7 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
         ))}
       </div>, "Mehrere Formate laufen parallel auf denselben Scores")}
 
-      {formats.includes("matchplay") && selected.length > 2 && field("Matchplay-Paarung", <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+      {needsDuel && selected.length > 2 && field(`Paarung (${duelLabel})`, <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
         {selected.map(player=>{
           const active = matchup.includes(String(player.id));
           return (
@@ -2203,13 +2255,20 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
         </div>
       )}
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(110px, 1fr))",gap:10}}>
         {field("Einsatz", <select style={sel} value={stakeUnit} onChange={e=>setStakeUnit(e.target.value)}>
           <option value="points">Punkte</option>
           <option value="eur">Euro</option>
         </select>)}
-        {field("je Skin", <input type="number" step="0.5" min="0" style={{...inp,opacity:formats.includes("skins")?1:0.5}} disabled={!formats.includes("skins")} value={skinStake} onChange={e=>setSkinStake(e.target.value)}/>)}
-        {field("Matchplay", <input type="number" step="0.5" min="0" style={{...inp,opacity:formats.includes("matchplay")?1:0.5}} disabled={!formats.includes("matchplay")} value={matchStake} onChange={e=>setMatchStake(e.target.value)}/>)}
+        {[
+          {key:"match", label:"je Matchplay", active:formats.includes("matchplay")},
+          {key:"nassau", label:"je Nassau-Wette", active:formats.includes("nassau")},
+          {key:"skin", label:"je Skin", active:formats.includes("skins")},
+          {key:"point", label:"je Punkt", active:formats.includes("wolf") || formats.includes("bbb")},
+        ].filter(entry=>entry.active).map(entry=>(
+          <div key={entry.key}>{field(entry.label, <input type="number" step="0.5" min="0" style={inp}
+            value={stakes[entry.key]} onChange={e=>setStakes(prev=>({...prev,[entry.key]:e.target.value}))}/>)}</div>
+        ))}
       </div>
 
       {problems.length > 0 && (
@@ -2226,8 +2285,27 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
   );
 }
 
+/** Punktetabelle, absteigend sortiert – für Skins, Wolf und BBB. */
+function PointsPanel({title, ids, nameById, totals, note=null, children=null}) {
+  return (
+    <div style={{...subtleCardStyle,padding:"12px 14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:6}}>
+        <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec}}>{title}</span>
+        {note}
+      </div>
+      {[...ids].sort((a,b)=>(totals[b] || 0) - (totals[a] || 0)).map(id=>(
+        <div key={id} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"3px 0"}}>
+          <span>{nameById.get(id)}</span>
+          <strong>{totals[id] || 0}</strong>
+        </div>
+      ))}
+      {children}
+    </div>
+  );
+}
+
 function GameStandings({game, state, compact=false}) {
-  const {matchplay, skins, nameById, ids} = state;
+  const {matchplay, nassau, skins, wolf, bbb, nameById, ids} = state;
   return (
     <div style={{display:"grid",gap:10}}>
       {matchplay && (()=>{
@@ -2255,25 +2333,149 @@ function GameStandings({game, state, compact=false}) {
         );
       })()}
 
-      {skins && (
-        <div style={{...subtleCardStyle,padding:"12px 14px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:6}}>
-            <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec}}>Skins</span>
-            {skins.openCarry > 0 && <span style={{fontSize:12,color:"#9a5314",fontWeight:600}}>{skins.openCarry} im Topf</span>}
-          </div>
-          {[...ids].sort((x,y)=>(skins.totals[y] || 0) - (skins.totals[x] || 0)).map(id=>(
-            <div key={id} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"3px 0"}}>
-              <span>{nameById.get(id)}</span>
-              <strong>{skins.totals[id] || 0}</strong>
+      {nassau && (()=>{
+        const [a, b] = game.matchup;
+        return (
+          <div style={{...subtleCardStyle,padding:"12px 14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:6}}>
+              <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec}}>Nassau</span>
+              <span style={{fontSize:12,color:COLORS.textSec}}>{nameById.get(a)} {nassau.totals.a}:{nassau.totals.b} {nameById.get(b)}</span>
             </div>
-          ))}
+            {nassau.bets.map(bet=>(
+              <div key={bet.key} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"3px 0",gap:10}}>
+                <span style={{color:bet.press?"#9a5314":"var(--color-text-primary)"}}>{bet.label}</span>
+                <strong style={{whiteSpace:"nowrap"}}>
+                  {bet.result.resultLabel ?? bet.result.statusLabel}
+                  {bet.result.status !== 0 && <span style={{fontWeight:500,color:COLORS.textSec}}> {nameById.get(bet.result.status > 0 ? a : b)}</span>}
+                </strong>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {skins && <PointsPanel title="Skins" ids={ids} nameById={nameById} totals={skins.totals}
+        note={skins.openCarry > 0 ? <span style={{fontSize:12,color:"#9a5314",fontWeight:600}}>{skins.openCarry} im Topf</span> : null}/>}
+
+      {wolf && <PointsPanel title="Wolf" ids={ids} nameById={nameById} totals={wolf.totals}/>}
+
+      {bbb && <PointsPanel title="Bingo Bango Bongo" ids={ids} nameById={nameById} totals={bbb.totals}>
+        {!compact && (
+          <div style={{fontSize:11,color:COLORS.textSec,marginTop:8}}>
+            {ids.map(id=>`${nameById.get(id)}: ${bbb.byAward[id].bingo}/${bbb.byAward[id].bango}/${bbb.byAward[id].bongo}`).join(" · ")}
+            <div style={{marginTop:2}}>Bingo / Bango / Bongo</div>
+          </div>
+        )}
+      </PointsPanel>}
+    </div>
+  );
+}
+
+/** Auswahlreihe aus Spieler-Chips – für Wolf-Partner und Bingo Bango Bongo. */
+function PlayerChips({participants, value, onSelect, extra=null, accent=COLORS.hcp}) {
+  return (
+    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+      {participants.map(participant=>{
+        const active = value === participant.playerId;
+        return (
+          <button key={participant.playerId} type="button"
+            onClick={()=>onSelect(active ? null : participant.playerId)}
+            style={{padding:"7px 12px",borderRadius:"999px",border:`1px solid ${active?"transparent":"var(--color-border-secondary)"}`,background:active?accent:"rgba(255,255,255,0.9)",color:active?"#fff":"var(--color-text-primary)",cursor:"pointer",fontSize:12.5,fontWeight:active?600:500}}>
+            {participant.name}
+          </button>
+        );
+      })}
+      {extra}
+    </div>
+  );
+}
+
+function WolfControls({game, state, holeIndex, onChoice}) {
+  const wolfHole = state.wolf?.holes[holeIndex];
+  if (!wolfHole?.wolfId) return null;
+  const wolfName = state.nameById.get(wolfHole.wolfId);
+  const choice = game.wolfChoices[holeIndex] || {};
+  const candidates = game.participants.filter(p=>p.playerId !== wolfHole.wolfId);
+  const rotationOver = holeIndex >= (state.wolf?.rotationHoles ?? 0);
+
+  const chip = (active, label, onClick, accent) => (
+    <button type="button" onClick={onClick}
+      style={{padding:"7px 12px",borderRadius:"999px",border:`1px solid ${active?"transparent":"var(--color-border-secondary)"}`,background:active?accent:"rgba(255,255,255,0.9)",color:active?"#fff":"var(--color-text-primary)",cursor:"pointer",fontSize:12.5,fontWeight:active?600:500}}>
+      {label}
+    </button>
+  );
+
+  return (
+    <div style={{...subtleCardStyle,padding:"12px 14px",marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}>
+        <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec}}>Wolf</span>
+        <span style={{fontSize:12.5,fontWeight:600}}>{wolfName}{rotationOver ? " (Punktletzter)" : ""}</span>
+      </div>
+      <PlayerChips
+        participants={candidates}
+        value={choice.partnerId ?? null}
+        accent="#7F77DD"
+        onSelect={partnerId=>onChoice(holeIndex, {partnerId, blind:false})}
+        extra={<>
+          {chip(!choice.partnerId && !choice.blind, "Lone Wolf · 3", ()=>onChoice(holeIndex, {partnerId:null, blind:false}), "#C56B1A")}
+          {chip(!choice.partnerId && Boolean(choice.blind), "Blind Wolf · 4", ()=>onChoice(holeIndex, {partnerId:null, blind:true}), "#9a5314")}
+        </>}
+      />
+      {wolfHole.outcome && (
+        <div style={{fontSize:12,color:COLORS.textSec,marginTop:8}}>
+          {wolfHole.outcome === "halved"
+            ? "Loch geteilt – keine Punkte"
+            : `${wolfHole.outcome === "wolf" ? "Wolf-Seite" : "Gegenseite"} gewinnt · ${Object.entries(wolfHole.points).map(([id, value])=>`${state.nameById.get(id)} +${value}`).join(", ")}`}
         </div>
       )}
     </div>
   );
 }
 
-function GameHoleEntry({game, state, onScore, onFinish, onExit}) {
+function BbbControls({game, state, holeIndex, onAward}) {
+  const entry = game.bbbAwards[holeIndex] || {};
+  return (
+    <div style={{...subtleCardStyle,padding:"12px 14px",marginBottom:12}}>
+      <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec,marginBottom:8}}>Bingo Bango Bongo</div>
+      {BBB_AWARDS.map(award=>(
+        <div key={award.key} style={{marginBottom:8}}>
+          <div style={{fontSize:12,color:COLORS.textSec,marginBottom:4}}><strong style={{color:"var(--color-text-primary)"}}>{award.label}</strong> · {award.hint}</div>
+          <PlayerChips
+            participants={game.participants}
+            value={entry[award.key] ?? null}
+            accent="#378ADD"
+            onSelect={playerId=>onAward(holeIndex, award.key, playerId)}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NassauPressControls({game, state, holeIndex, onPress}) {
+  const segments = nassauSegments(game.holeCount);
+  const segment = segments.find(entry=>entry.key !== "total" && holeIndex >= entry.from && holeIndex < entry.to)
+    ?? segments[segments.length-1];
+  const alreadyPressed = game.nassauPresses.some(press=>press.segment === segment.key && press.from === holeIndex);
+  const bet = state.nassau?.bets.find(entry=>entry.key === segment.key);
+  const canPress = holeIndex + 1 < segment.to;
+
+  return (
+    <div style={{...subtleCardStyle,padding:"12px 14px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+      <div>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec}}>Nassau · {segment.label}</div>
+        <div style={{fontSize:13,marginTop:2}}>{bet ? bet.result.statusLabel : "A/S"}</div>
+      </div>
+      <button type="button" disabled={alreadyPressed || !canPress}
+        onClick={()=>onPress({from:holeIndex, segment:segment.key})}
+        style={{...gamesGhostBtn,padding:"8px 14px",fontSize:13,opacity:(alreadyPressed || !canPress)?0.4:1,cursor:(alreadyPressed || !canPress)?"not-allowed":"pointer"}}>
+        {alreadyPressed ? "Press läuft" : "Press ab hier"}
+      </button>
+    </div>
+  );
+}
+
+function GameHoleEntry({game, state, onScore, onChoice, onAward, onPress, onFinish, onExit}) {
   // Beim Öffnen auf das erste noch unvollständige Loch springen.
   const [holeIndex, setHoleIndex] = useState(()=>{
     for (let index = 0; index < game.holeCount; index += 1) {
@@ -2316,6 +2518,10 @@ function GameHoleEntry({game, state, onScore, onFinish, onExit}) {
           );
         })}
       </div>
+
+      {state.wolf && <WolfControls game={game} state={state} holeIndex={holeIndex} onChoice={onChoice}/>}
+      {state.bbb && <BbbControls game={game} state={state} holeIndex={holeIndex} onAward={onAward}/>}
+      {state.nassau && <NassauPressControls game={game} state={state} holeIndex={holeIndex} onPress={onPress}/>}
 
       <GameStandings game={game} state={state} compact/>
 
@@ -2489,12 +2695,16 @@ function GameResultView({game, state, meParticipant, onCreateHcpRound, onReopen,
 function GameRow({game, onOpen, onDelete}) {
   const state = useGameState(game);
   const running = game.status === "running";
+  const leader = totals => {
+    const best = [...state.ids].sort((a,b)=>(totals[b] || 0) - (totals[a] || 0))[0];
+    return `${state.nameById.get(best)} ${totals[best] || 0}`;
+  };
   const summary = [];
   if (state.matchplay) summary.push(`Matchplay ${state.matchplay.resultLabel ?? state.matchplay.statusLabel}`);
-  if (state.skins) {
-    const best = [...state.ids].sort((a,b)=>(state.skins.totals[b] || 0) - (state.skins.totals[a] || 0))[0];
-    summary.push(`Skins: ${state.nameById.get(best)} ${state.skins.totals[best] || 0}`);
-  }
+  if (state.nassau) summary.push(`Nassau ${state.nassau.totals.a}:${state.nassau.totals.b}`);
+  if (state.skins) summary.push(`Skins: ${leader(state.skins.totals)}`);
+  if (state.wolf) summary.push(`Wolf: ${leader(state.wolf.totals)}`);
+  if (state.bbb) summary.push(`BBB: ${leader(state.bbb.totals)}`);
 
   return (
     <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:"var(--border-radius-md)",border:`1px solid ${running?"rgba(29,158,117,0.38)":"var(--color-border-tertiary)"}`,background:running?"linear-gradient(180deg, #ecfbf4 0%, #e3f6ee 100%)":"rgba(255,255,255,0.9)",boxShadow:"var(--shadow-soft)",marginBottom:10}}>
@@ -2571,16 +2781,16 @@ function HeadToHead({games, mePlayerId}) {
   );
 }
 
-function GamePlayView({game, onScore, onFinish, onReopen, onExit, onCreateHcpRound}) {
+function GamePlayView({game, onScore, onChoice, onAward, onPress, onFinish, onReopen, onExit, onCreateHcpRound}) {
   const state = useGameState(game);
   const meParticipant = game.participants.find(p=>p.isMe);
   if (game.status === "finished") {
     return <GameResultView game={game} state={state} meParticipant={meParticipant} onCreateHcpRound={onCreateHcpRound} onReopen={onReopen} onExit={onExit}/>;
   }
-  return <GameHoleEntry game={game} state={state} onScore={onScore} onFinish={onFinish} onExit={onExit}/>;
+  return <GameHoleEntry game={game} state={state} onScore={onScore} onChoice={onChoice} onAward={onAward} onPress={onPress} onFinish={onFinish} onExit={onExit}/>;
 }
 
-function GamesView({games, courses, players, profile, displayHcp, onStartGame, onAddPlayer, onScore, onFinishGame, onReopenGame, onDeleteGame, onCreateHcpRound}) {
+function GamesView({games, courses, players, profile, displayHcp, onStartGame, onAddPlayer, onScore, onWolfChoice, onBbbAward, onNassauPress, onFinishGame, onReopenGame, onDeleteGame, onCreateHcpRound}) {
   const [screen, setScreen] = useState<{mode:"list"|"setup"|"play"; gameId?:number}>({mode:"list"});
   const openGame = games.find(g=>g.id === screen.gameId);
   const mePlayer = players.find(p=>p.isMe);
@@ -2612,6 +2822,9 @@ function GamesView({games, courses, players, profile, displayHcp, onStartGame, o
         <GamePlayView
           game={openGame}
           onScore={(holeIndex, playerId, value)=>onScore(openGame.id, holeIndex, playerId, value)}
+          onChoice={(holeIndex, choice)=>onWolfChoice(openGame.id, holeIndex, choice)}
+          onAward={(holeIndex, award, playerId)=>onBbbAward(openGame.id, holeIndex, award, playerId)}
+          onPress={press=>onNassauPress(openGame.id, press)}
           onFinish={()=>onFinishGame(openGame.id)}
           onReopen={()=>onReopenGame(openGame.id)}
           onExit={()=>setScreen({mode:"list"})}
@@ -3132,6 +3345,19 @@ export default function App() {
     });
     return game;
   });
+  const setWolfChoice = (gameId, holeIndex, choice) => updateGame(gameId, game=>({
+    ...game,
+    wolfChoices: game.wolfChoices.map((entry, index)=>index===holeIndex ? {...entry, ...choice} : entry),
+  }));
+  const setBbbAward = (gameId, holeIndex, award, playerId) => updateGame(gameId, game=>({
+    ...game,
+    bbbAwards: game.bbbAwards.map((entry, index)=>index===holeIndex ? {...entry, [award]:playerId} : entry),
+  }));
+  const addNassauPress = (gameId, press) => updateGame(gameId, game=>(
+    game.nassauPresses.some(entry=>entry.segment===press.segment && entry.from===press.from)
+      ? game
+      : {...game, nassauPresses:[...game.nassauPresses, press]}
+  ));
   const finishGame = gameId => updateGame(gameId, game=>({...game, status:"finished", finishedAt:new Date().toISOString()}));
   const reopenGame = gameId => updateGame(gameId, game=>({...game, status:"running"}));
   const deleteGame = gameId => updateDB(db=>{ db.games=db.games.filter(game=>game.id!==gameId); return db; });
@@ -3234,6 +3460,9 @@ export default function App() {
         onStartGame={startGame}
         onAddPlayer={addPlayer}
         onScore={setGameScore}
+        onWolfChoice={setWolfChoice}
+        onBbbAward={setBbbAward}
+        onNassauPress={addNassauPress}
         onFinishGame={finishGame}
         onReopenGame={reopenGame}
         onDeleteGame={deleteGame}
