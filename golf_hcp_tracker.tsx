@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline } from "./src/hcpMath";
+import { suggestHoles, normalizeHoles, totalPar, buildAllocations, scoreMatchplay, scoreSkins, scoreNassau, scoreWolf, scoreBingoBangoBongo, nassauSegments, BBB_AWARDS, stablefordFromHoles, playedHoleCount, DEFAULT_HANDICAP_CONFIG } from "./src/gameMath";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -61,9 +62,70 @@ function round3(value) {
 
 function normalizeCourse(course) {
   const factor = parseFloat(course?.nineHolePhcpFactor);
-  return {
+  // holeCount/holeData tragen die Scorekarte (Par und Vorgabenverteilung je Loch)
+  // und werden nur von der Games-Rubrik gebraucht. Ohne sie bleibt der Platz
+  // voll funktionsfähig – die Daten werden dann beim ersten Spiel vorgeschlagen.
+  const holeCount = parseInt(course?.holeCount) === 9 ? 9 : parseInt(course?.holeCount) === 18 ? 18 : null;
+  const hasHoleData = Array.isArray(course?.holeData) && course.holeData.length > 0;
+  const normalized = {
     ...course,
     nineHolePhcpFactor: Number.isFinite(factor) && factor > 0 ? round3(factor) : 0.5,
+  };
+  if (holeCount || hasHoleData) {
+    const count = holeCount ?? (course.holeData.length === 9 ? 9 : 18);
+    normalized.holeCount = count;
+    normalized.holeData = normalizeHoles(course?.holeData, count, course?.par);
+  }
+  return normalized;
+}
+
+function normalizePlayer(player) {
+  const hcpIndex = parseFloat(player?.hcpIndex);
+  return {
+    ...player,
+    name: String(player?.name ?? "").trim(),
+    hcpIndex: Number.isFinite(hcpIndex) ? round1(hcpIndex) : 54,
+    isMe: Boolean(player?.isMe),
+  };
+}
+
+function normalizeGame(game) {
+  const holeCount = parseInt(game?.holeCount) === 9 ? 9 : 18;
+  const holes = normalizeHoles(game?.holes, holeCount, game?.coursePar);
+  const scores = Array.from({length: holeCount}, (_, index)=>{
+    const row = Array.isArray(game?.scores) ? game.scores[index] : null;
+    return row && typeof row === "object" ? {...row} : {};
+  });
+  return {
+    ...game,
+    holeCount,
+    holes,
+    scores,
+    formats: Array.isArray(game?.formats) ? game.formats : [],
+    participants: Array.isArray(game?.participants) ? game.participants : [],
+    wolfChoices: Array.from({length: holeCount}, (_, index)=>{
+      const entry = Array.isArray(game?.wolfChoices) ? game.wolfChoices[index] : null;
+      return entry && typeof entry === "object" ? {partnerId: entry.partnerId ?? null, blind: Boolean(entry.blind)} : {partnerId:null, blind:false};
+    }),
+    bbbAwards: Array.from({length: holeCount}, (_, index)=>{
+      const entry = Array.isArray(game?.bbbAwards) ? game.bbbAwards[index] : null;
+      return entry && typeof entry === "object" ? {bingo: entry.bingo ?? null, bango: entry.bango ?? null, bongo: entry.bongo ?? null} : {bingo:null, bango:null, bongo:null};
+    }),
+    nassauPresses: Array.isArray(game?.nassauPresses)
+      ? game.nassauPresses.filter(press=>Number.isFinite(press?.from) && typeof press?.segment === "string")
+      : [],
+    handicap: {
+      mode: game?.handicap?.mode ?? DEFAULT_HANDICAP_CONFIG.mode,
+      percent: Number.isFinite(parseFloat(game?.handicap?.percent)) ? parseFloat(game.handicap.percent) : DEFAULT_HANDICAP_CONFIG.percent,
+    },
+    stake: {
+      unit: game?.stake?.unit === "eur" ? "eur" : "points",
+      skin: parseFloat(game?.stake?.skin) || 1,
+      match: parseFloat(game?.stake?.match) || 1,
+      nassau: parseFloat(game?.stake?.nassau) || 1,
+      point: parseFloat(game?.stake?.point) || 1,
+    },
+    status: game?.status === "finished" ? "finished" : "running",
   };
 }
 
@@ -72,20 +134,32 @@ function normalizeDB(data) {
   const courses = Array.isArray(safe.courses) ? safe.courses.map(normalizeCourse) : [];
   const rounds = Array.isArray(safe.rounds) ? safe.rounds : [];
   const simulatedRounds = Array.isArray(safe.simulatedRounds) ? safe.simulatedRounds : [];
+  const players = Array.isArray(safe.players) ? safe.players.map(normalizePlayer) : [];
+  const games = Array.isArray(safe.games) ? safe.games.map(normalizeGame) : [];
   const nextRoundId = Number.isFinite(safe.nextRoundId)
     ? safe.nextRoundId
     : [...rounds, ...simulatedRounds].reduce((maxId, round)=>Math.max(maxId, round.id || 0), 0) + 1;
   const nextCourseId = Number.isFinite(safe.nextCourseId)
     ? safe.nextCourseId
     : courses.reduce((maxId, course)=>Math.max(maxId, course.id || 0), 0) + 1;
+  const nextPlayerId = Number.isFinite(safe.nextPlayerId)
+    ? safe.nextPlayerId
+    : players.reduce((maxId, player)=>Math.max(maxId, player.id || 0), 0) + 1;
+  const nextGameId = Number.isFinite(safe.nextGameId)
+    ? safe.nextGameId
+    : games.reduce((maxId, game)=>Math.max(maxId, game.id || 0), 0) + 1;
 
   return {
     courses,
     rounds,
     simulatedRounds,
+    players,
+    games,
     profile: safe.profile || {name:"", startHcp:54},
     nextRoundId,
     nextCourseId,
+    nextPlayerId,
+    nextGameId,
   };
 }
 
@@ -1228,10 +1302,83 @@ function RoundForm({initial, courses, currentHcp, onSave, onCancel}) {
   );
 }
 
+// Scorekarte eines Platzes: Par und Vorgabenverteilung (Stroke Index) je Loch.
+// Wird nur für Netto-Spiele in der Games-Rubrik gebraucht, deshalb standardmäßig
+// eingeklappt. Die App schlägt eine Verteilung vor, korrigiert wird nach der
+// echten Scorekarte.
+function HoleDataEditor({holeCount, holeData, coursePar, onChange, onHoleCountChange}) {
+  const holes = holeData ?? [];
+  const parSum = totalPar(holes);
+  const duplicateSi = useMemo(()=>{
+    const seen = new Set();
+    return holes.some(hole=>{
+      if (seen.has(hole.si)) return true;
+      seen.add(hole.si);
+      return false;
+    });
+  }, [holes]);
+
+  const setHole = (index, key, value) => {
+    onChange(holes.map((hole, i)=>i===index ? {...hole, [key]: value} : hole));
+  };
+
+  const cell: CSSProperties = {...inp, padding:"6px 8px", fontSize:13, textAlign:"center"};
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+        <select style={{...sel,width:"auto"}} value={holeCount} onChange={e=>onHoleCountChange(parseInt(e.target.value))}>
+          <option value={18}>18 Loch</option>
+          <option value={9}>9 Loch</option>
+        </select>
+        <button type="button" onClick={()=>onChange(suggestHoles(holeCount, coursePar))}
+          style={{padding:"9px 14px",borderRadius:"var(--border-radius-md)",border:"1px solid var(--color-border-secondary)",background:"rgba(255,255,255,0.92)",cursor:"pointer",fontSize:13,fontWeight:600,color:"var(--color-text-primary)"}}>
+          Vorschlag neu erzeugen
+        </button>
+        <span style={{fontSize:12,color:COLORS.textSec,marginLeft:"auto"}}>Gesamt-Par {parSum}</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(150px, 1fr))",gap:10}}>
+        {[0,9].filter(offset=>offset<holes.length).map(offset=>(
+          <div key={offset}>
+            <div style={{display:"grid",gridTemplateColumns:"28px 1fr 1fr",gap:6,fontSize:11,color:COLORS.textSec,fontWeight:600,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.06em"}}>
+              <span>Loch</span><span style={{textAlign:"center"}}>Par</span><span style={{textAlign:"center"}}>SI</span>
+            </div>
+            {holes.slice(offset, offset+9).map((hole, i)=>{
+              const index = offset + i;
+              return (
+                <div key={hole.nr} style={{display:"grid",gridTemplateColumns:"28px 1fr 1fr",gap:6,marginBottom:5,alignItems:"center"}}>
+                  <span style={{fontSize:13,fontWeight:600,color:"var(--color-text-secondary)"}}>{hole.nr}</span>
+                  <input type="number" min={3} max={6} style={cell} value={hole.par}
+                    onChange={e=>setHole(index,"par",parseInt(e.target.value)||hole.par)}/>
+                  <input type="number" min={1} max={holes.length} style={cell} value={hole.si}
+                    onChange={e=>setHole(index,"si",parseInt(e.target.value)||hole.si)}/>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      {duplicateSi && (
+        <div style={{marginTop:10,padding:"8px 12px",borderRadius:"var(--border-radius-md)",background:"#FDF1E6",color:"#9a5314",fontSize:12}}>
+          Stroke Index doppelt vergeben. Jeder Wert von 1 bis {holes.length} darf nur einmal vorkommen – sonst wird die Verteilung beim Speichern automatisch korrigiert.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CourseForm({initial, rounds, startHcp, onSave, onCancel}) {
   const [c, setC] = useState(normalizeCourse(initial));
+  const [showHoles, setShowHoles] = useState(Boolean(initial?.holeData?.length));
   const set = (k,v) => setC(prev=>({...prev,[k]:v}));
   const learnedFactor = useMemo(()=>deriveNineHolePhcpFactor(rounds, startHcp, c.id), [rounds, startHcp, c.id]);
+
+  const holeCount = c.holeCount ?? 18;
+  const openHoleEditor = () => {
+    setShowHoles(true);
+    if (!c.holeData?.length) setC(prev=>({...prev, holeCount, holeData: suggestHoles(holeCount, prev.par)}));
+  };
+  const changeHoleCount = count => setC(prev=>({...prev, holeCount: count, holeData: suggestHoles(count, prev.par)}));
 
   return (
     <div>
@@ -1250,6 +1397,18 @@ function CourseForm({initial, rounds, startHcp, onSave, onCancel}) {
           Ableiten
         </button>
       </div>, learnedFactor ? `aus ${learnedFactor.sampleSize} Runde${learnedFactor.sampleSize===1?"":"n"}: ${learnedFactor.factor}` : "9-Loch PHCP = Course Handicap × Faktor")}
+      {showHoles
+        ? field("Scorekarte (für Games)", <HoleDataEditor
+            holeCount={holeCount}
+            holeData={c.holeData}
+            coursePar={c.par}
+            onChange={data=>set("holeData", data)}
+            onHoleCountChange={changeHoleCount}
+          />, "Vorschlag – bitte an die echte Scorekarte anpassen")
+        : field("Scorekarte (für Games)", <button type="button" onClick={openHoleEditor}
+            style={{padding:"9px 14px",borderRadius:"var(--border-radius-md)",border:"1px solid var(--color-border-secondary)",background:"rgba(255,255,255,0.92)",cursor:"pointer",fontSize:13,fontWeight:600,color:"var(--color-text-primary)"}}>
+            Par und Vorgabenverteilung erfassen
+          </button>, "Nur für Netto-Spiele in der Games-Rubrik nötig")}
       {field("Notizen", <textarea style={{...inp,resize:"vertical",minHeight:60}} value={c.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="z.B. Heimatplatz"/>)}
       <div style={{display:"flex",gap:8}}>
         <button onClick={()=>{if(!c.name) return alert("Name erforderlich"); onSave(c);}}
@@ -1768,6 +1927,983 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTime
           <div style={{fontSize:12,color:"var(--color-text-secondary)",marginTop:10}}>Punkte antippen oder überfahren für Datum und Wert.</div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Games: Spiele gegeneinander (Matchplay, Skins). Loch für Loch erfasst, alle
+// aktivierten Formate laufen auf denselben Scores parallel mit.
+// ---------------------------------------------------------------------------
+
+const GAME_FORMATS = [
+  {id:"matchplay", label:"Matchplay", hint:"1 gegen 1, Loch für Loch"},
+  {id:"nassau", label:"Nassau", hint:"Front 9, Back 9 und Gesamt als drei Wetten, Press per Knopf"},
+  {id:"skins", label:"Skins", hint:"Jedes Loch ein Topf, Carry-over bei Gleichstand"},
+  {id:"wolf", label:"Wolf", hint:"Rotierender Wolf wählt Partner oder geht allein (3 bis 5 Spieler)"},
+  {id:"bbb", label:"Bingo Bango Bongo", hint:"Drei Punkte pro Loch, direkt im Loch-Screen angetippt"},
+];
+
+/** Spielformate, die genau zwei Kontrahenten brauchen. */
+const DUEL_FORMATS = ["matchplay", "nassau"];
+
+const HANDICAP_MODES = [
+  {id:"difference", label:"Netto – Differenz zum Besten", hint:"Lochspiel-Standard: der beste Spieler spielt Scratch"},
+  {id:"full", label:"Netto – volles Course Handicap", hint:"Jeder bekommt seine kompletten Vorgabenschläge"},
+  {id:"gross", label:"Brutto – ohne Vorgabe", hint:"Reine Schlagzahl, keine Vorgabenschläge"},
+];
+
+const gamesPrimaryBtn: CSSProperties = {padding:"10px 18px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:600,fontSize:14};
+const gamesGhostBtn: CSSProperties = {padding:"10px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:"0.5px solid var(--color-border-tertiary)",cursor:"pointer",fontSize:14,color:"var(--color-text-primary)"};
+
+function formatStake(amount, unit) {
+  const value = Math.round((amount || 0) * 100) / 100;
+  if (unit === "eur") return `${value.toFixed(2).replace(".", ",")} €`;
+  return `${value} Pkt`;
+}
+
+function formatSignedStake(amount, unit) {
+  const value = Math.round((amount || 0) * 100) / 100;
+  if (value === 0) return formatStake(0, unit);
+  return `${value > 0 ? "+" : "−"}${formatStake(Math.abs(value), unit)}`;
+}
+
+/** Course Handicap eines Spielers für dieses Spiel (inkl. 9-Loch-Faktor). */
+function gameCourseHandicap(hcpIndex, course, holeCount) {
+  const value = calcPlayingHcpFromCourse(hcpIndex, course, holeCount);
+  return value === null ? 0 : value;
+}
+
+/**
+ * Verrechnet die Salden zu möglichst wenigen Zahlungen ("wer zahlt wem").
+ * Erwartet eine Liste, deren Beträge sich zu 0 aufheben.
+ */
+function buildSettlement(balances) {
+  const debtors = balances.filter(b=>b.amount < -0.005).map(b=>({...b, rest:-b.amount})).sort((a,b)=>b.rest-a.rest);
+  const creditors = balances.filter(b=>b.amount > 0.005).map(b=>({...b, rest:b.amount})).sort((a,b)=>b.rest-a.rest);
+  const transfers = [];
+  let i = 0;
+  let j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const amount = Math.min(debtors[i].rest, creditors[j].rest);
+    if (amount > 0.005) transfers.push({from:debtors[i].name, to:creditors[j].name, amount});
+    debtors[i].rest -= amount;
+    creditors[j].rest -= amount;
+    if (debtors[i].rest <= 0.005) i += 1;
+    if (creditors[j].rest <= 0.005) j += 1;
+  }
+  return transfers;
+}
+
+/** Alle abgeleiteten Werte eines Spiels an einer Stelle. */
+function useGameState(game) {
+  return useMemo(()=>{
+    const ids = game.participants.map(p=>p.playerId);
+    const nameById = new Map(game.participants.map(p=>[p.playerId, p.name]));
+    const allocations = buildAllocations(
+      game.participants.map(p=>({id:p.playerId, courseHandicap:p.courseHandicap})),
+      game.holes,
+      game.handicap,
+    );
+    const allocationById = new Map(allocations.map(a=>[a.id, a]));
+
+    const hasDuel = Array.isArray(game.matchup) && game.matchup.length === 2;
+    const matchplay = hasDuel && game.formats.includes("matchplay")
+      ? scoreMatchplay(game.matchup[0], game.matchup[1], game.scores, allocations, game.holes)
+      : null;
+    const nassau = hasDuel && game.formats.includes("nassau")
+      ? scoreNassau(game.matchup[0], game.matchup[1], game.scores, allocations, game.holes, game.nassauPresses)
+      : null;
+    const skins = game.formats.includes("skins")
+      ? scoreSkins(ids, game.scores, allocations, game.holes)
+      : null;
+    const wolf = game.formats.includes("wolf") && ids.length >= 3
+      ? scoreWolf(ids, game.scores, allocations, game.holes, game.wolfChoices)
+      : null;
+    const bbb = game.formats.includes("bbb")
+      ? scoreBingoBangoBongo(ids, game.bbbAwards, game.holeCount)
+      : null;
+
+    const played = playedHoleCount(game.scores, ids, game.holeCount);
+
+    // Salden je Spieler: Matchplay zwischen den beiden Kontrahenten, Skins über
+    // den ganzen Flight (jeder Skin wird von allen anderen bezahlt).
+    const balances = new Map<string, number>(ids.map(id=>[id, 0]));
+    if (matchplay && matchplay.complete && matchplay.winner) {
+      const [a, b] = game.matchup;
+      const winnerId = matchplay.winner === "a" ? a : b;
+      const loserId = matchplay.winner === "a" ? b : a;
+      balances.set(winnerId, balances.get(winnerId) + game.stake.match);
+      balances.set(loserId, balances.get(loserId) - game.stake.match);
+    }
+    if (nassau) {
+      const [a, b] = game.matchup;
+      const delta = (nassau.totals.a - nassau.totals.b) * game.stake.nassau;
+      balances.set(a, balances.get(a) + delta);
+      balances.set(b, balances.get(b) - delta);
+    }
+    // Punktespiele werden über den Abstand zum Feld verrechnet: wer einen Punkt
+    // holt, bekommt ihn von jedem anderen. Das bleibt in Summe bei null.
+    const settlePoints = (totals, stake)=>{
+      if (ids.length < 2) return;
+      const sum = ids.reduce((total, id)=>total + (totals[id] || 0), 0);
+      for (const id of ids) {
+        balances.set(id, balances.get(id) + stake * (ids.length * (totals[id] || 0) - sum));
+      }
+    };
+    if (skins) settlePoints(skins.totals, game.stake.skin);
+    if (wolf) settlePoints(wolf.totals, game.stake.point);
+    if (bbb) settlePoints(bbb.totals, game.stake.point);
+
+    const balanceList = ids.map(id=>({id, name:nameById.get(id) || id, amount:balances.get(id) || 0}));
+
+    return {ids, nameById, allocations, allocationById, matchplay, nassau, skins, wolf, bbb, played, balanceList};
+  }, [game]);
+}
+
+/** Große Tippflächen für die Schlageingabe – mit Handschuh bedienbar. */
+function ScoreStepper({value, par, onChange}) {
+  const has = Number.isFinite(value);
+  const step = delta => {
+    if (!has) return onChange(par);
+    onChange(Math.min(20, Math.max(1, value + delta)));
+  };
+  const btn: CSSProperties = {width:44,height:44,borderRadius:"var(--border-radius-md)",border:"1px solid var(--color-border-secondary)",background:"rgba(255,255,255,0.94)",fontSize:22,lineHeight:1,cursor:"pointer",color:"var(--color-text-primary)",fontWeight:600,flexShrink:0,touchAction:"manipulation"};
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:8}}>
+      <button type="button" aria-label="Schlag weniger" onClick={()=>step(-1)} style={btn}>−</button>
+      <input
+        type="number"
+        inputMode="numeric"
+        aria-label="Schläge"
+        value={has ? value : ""}
+        placeholder="–"
+        onChange={e=>{
+          const parsed = parseInt(e.target.value, 10);
+          onChange(Number.isFinite(parsed) ? Math.min(20, Math.max(1, parsed)) : null);
+        }}
+        style={{...inp,width:56,padding:"10px 4px",textAlign:"center",fontSize:20,fontWeight:700,flexShrink:0}}
+      />
+      <button type="button" aria-label="Schlag mehr" onClick={()=>step(1)} style={btn}>+</button>
+    </div>
+  );
+}
+
+function StrokeDots({strokes}) {
+  if (!strokes) return null;
+  if (strokes < 0) return <span style={{fontSize:11,color:"#9a5314",fontWeight:700}}>{strokes}</span>;
+  return <span style={{fontSize:13,color:COLORS.hcp,letterSpacing:1,fontWeight:700}}>{"•".repeat(Math.min(strokes, 4))}</span>;
+}
+
+function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAddPlayer, onCancel}) {
+  const [date, setDate] = useState(()=>new Date().toISOString().slice(0,10));
+  const [courseId, setCourseId] = useState(()=>courses[0]?.id ?? "");
+  const [holeCount, setHoleCount] = useState(18);
+  const [selectedIds, setSelectedIds] = useState(()=>players.filter(p=>p.isMe).map(p=>p.id));
+  const [formats, setFormats] = useState(["matchplay"]);
+  const [matchup, setMatchup] = useState([]);
+  const [handicapMode, setHandicapMode] = useState<"difference"|"full"|"gross">(DEFAULT_HANDICAP_CONFIG.mode);
+  const [handicapPercent, setHandicapPercent] = useState(DEFAULT_HANDICAP_CONFIG.percent);
+  const [stakeUnit, setStakeUnit] = useState("points");
+  const [stakes, setStakes] = useState({skin:"1", match:"1", nassau:"1", point:"1"});
+  const [newName, setNewName] = useState("");
+  const [newHcp, setNewHcp] = useState("");
+
+  const course = courses.find(c=>c.id === parseInt(courseId));
+  const holes = useMemo(
+    ()=>normalizeHoles(course?.holeData, holeCount, course?.par),
+    [course?.holeData, course?.par, holeCount],
+  );
+  const holeDataMissing = Boolean(course) && !course.holeData?.length;
+
+  const selected = selectedIds.map(id=>players.find(p=>p.id === id)).filter(Boolean);
+  const toggleSelected = id => setSelectedIds(prev=>{
+    const next = prev.includes(id) ? prev.filter(x=>x !== id) : [...prev, id];
+    setMatchup(m=>m.filter(x=>next.includes(parseInt(x))));
+    return next;
+  });
+  const toggleFormat = id => setFormats(prev=>prev.includes(id) ? prev.filter(x=>x !== id) : [...prev, id]);
+
+  const toggleMatchup = id => setMatchup(prev=>{
+    const key = String(id);
+    if (prev.includes(key)) return prev.filter(x=>x !== key);
+    if (prev.length >= 2) return [prev[1], key];
+    return [...prev, key];
+  });
+
+  // Bei genau zwei Teilnehmern ist die Paarung eindeutig.
+  const effectiveMatchup = selected.length === 2 ? selected.map(p=>String(p.id)) : matchup;
+
+  const handicapPreview = useMemo(()=>{
+    if (!course || selected.length < 2) return [];
+    const config = {mode:handicapMode, percent:handicapPercent};
+    const participants = selected.map(p=>({
+      id: String(p.id),
+      courseHandicap: gameCourseHandicap(p.isMe ? displayHcp : p.hcpIndex, course, holeCount),
+    }));
+    const allocations = buildAllocations(participants, holes, config);
+    return selected.map((player, index)=>({
+      name: player.name,
+      courseHandicap: allocations[index].courseHandicap,
+      gameHandicap: allocations[index].gameHandicap,
+    }));
+  }, [course, selected, handicapMode, handicapPercent, holes, holeCount, displayHcp]);
+
+  const needsDuel = formats.some(id=>DUEL_FORMATS.includes(id));
+  const duelLabel = formats.filter(id=>DUEL_FORMATS.includes(id))
+    .map(id=>GAME_FORMATS.find(format=>format.id === id)?.label).join(" / ");
+
+  const problems = [];
+  if (!course) problems.push("Bitte einen Platz wählen – Games brauchen Course Rating, Slope und die Scorekarte.");
+  if (selected.length < 2) problems.push("Mindestens zwei Teilnehmer auswählen.");
+  if (!formats.length) problems.push("Mindestens ein Spielformat aktivieren.");
+  if (needsDuel && effectiveMatchup.length !== 2) problems.push(`Für ${duelLabel} genau zwei Kontrahenten markieren.`);
+  if (formats.includes("wolf") && (selected.length < 3 || selected.length > 5)) problems.push("Wolf braucht drei bis fünf Teilnehmer.");
+
+  const start = () => {
+    if (problems.length) return;
+    onStart({
+      date,
+      courseId: course.id,
+      courseName: course.name,
+      courseRating: course.courseRating,
+      slopeRating: course.slopeRating,
+      coursePar: course.par,
+      holeCount,
+      holes,
+      handicap: {mode:handicapMode, percent:handicapPercent},
+      formats,
+      matchup: needsDuel ? effectiveMatchup : [],
+      wolfChoices: Array.from({length:holeCount},()=>({partnerId:null, blind:false})),
+      bbbAwards: Array.from({length:holeCount},()=>({bingo:null, bango:null, bongo:null})),
+      nassauPresses: [],
+      stake: {
+        unit: stakeUnit,
+        skin: parseFloat(stakes.skin) || 1,
+        match: parseFloat(stakes.match) || 1,
+        nassau: parseFloat(stakes.nassau) || 1,
+        point: parseFloat(stakes.point) || 1,
+      },
+      participants: selected.map(player=>({
+        playerId: String(player.id),
+        name: player.isMe ? (player.name || profileName) : player.name,
+        isMe: Boolean(player.isMe),
+        hcpIndex: player.isMe ? displayHcp : player.hcpIndex,
+        courseHandicap: gameCourseHandicap(player.isMe ? displayHcp : player.hcpIndex, course, holeCount),
+      })),
+    });
+  };
+
+  const addPlayer = () => {
+    const name = newName.trim();
+    if (!name) return;
+    const hcpIndex = parseFloat(newHcp);
+    const id = onAddPlayer({name, hcpIndex: Number.isFinite(hcpIndex) ? hcpIndex : 54});
+    setSelectedIds(prev=>[...prev, id]);
+    setNewName("");
+    setNewHcp("");
+  };
+
+  return (
+    <div>
+      {field("Datum", <input type="date" style={inp} value={date} onChange={e=>setDate(e.target.value)}/>)}
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10}}>
+        {field("Platz", <select style={sel} value={courseId} onChange={e=>setCourseId(e.target.value)}>
+          <option value="">– wählen –</option>
+          {courses.map(c=><option key={c.id} value={c.id}>{c.name} (CR {c.courseRating} / SR {c.slopeRating})</option>)}
+        </select>)}
+        {field("Löcher", <select style={sel} value={holeCount} onChange={e=>setHoleCount(parseInt(e.target.value))}>
+          <option value={18}>18 Loch</option>
+          <option value={9}>9 Loch</option>
+        </select>)}
+      </div>
+      {holeDataMissing && (
+        <div style={{marginBottom:14,padding:"10px 14px",borderRadius:"var(--border-radius-md)",background:"#FDF1E6",color:"#9a5314",fontSize:12.5}}>
+          Für „{course.name}" ist noch keine Scorekarte hinterlegt. Das Spiel startet mit der vorgeschlagenen Vorgabenverteilung – die echte Verteilung kannst du unter Plätze eintragen.
+        </div>
+      )}
+
+      {field("Teilnehmer", <div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}}>
+          {players.map(player=>{
+            const active = selectedIds.includes(player.id);
+            return (
+              <button key={player.id} type="button" onClick={()=>toggleSelected(player.id)}
+                style={{padding:"8px 14px",borderRadius:"999px",border:`1px solid ${active?"transparent":"var(--color-border-secondary)"}`,background:active?"linear-gradient(135deg, #1D9E75 0%, #14684f 100%)":"rgba(255,255,255,0.9)",color:active?"#fff":"var(--color-text-primary)",cursor:"pointer",fontSize:13,fontWeight:active?600:500}}>
+                {player.isMe ? `${player.name || profileName} (du)` : player.name} · {player.isMe ? displayHcp : player.hcpIndex}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 90px auto",gap:8}}>
+          <input style={inp} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Mitspieler hinzufügen"/>
+          <input type="number" step="0.1" style={inp} value={newHcp} onChange={e=>setNewHcp(e.target.value)} placeholder="HCP"/>
+          <button type="button" onClick={addPlayer} style={{...gamesGhostBtn,padding:"10px 14px"}}>+</button>
+        </div>
+      </div>, "Mitspieler bleiben für die nächsten Spiele gespeichert")}
+
+      {field("Spielformate", <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {GAME_FORMATS.map(format=>(
+          <label key={format.id} style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer",padding:"10px 12px",borderRadius:"var(--border-radius-md)",border:`1px solid ${formats.includes(format.id)?"rgba(29,158,117,0.4)":"var(--color-border-tertiary)"}`,background:formats.includes(format.id)?"#ecfbf4":"rgba(255,255,255,0.9)"}}>
+            <input type="checkbox" checked={formats.includes(format.id)} onChange={()=>toggleFormat(format.id)} style={{marginTop:2}}/>
+            <span>
+              <span style={{fontSize:14,fontWeight:600,display:"block"}}>{format.label}</span>
+              <span style={{fontSize:12,color:COLORS.textSec}}>{format.hint}</span>
+            </span>
+          </label>
+        ))}
+      </div>, "Mehrere Formate laufen parallel auf denselben Scores")}
+
+      {needsDuel && selected.length > 2 && field(`Paarung (${duelLabel})`, <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {selected.map(player=>{
+          const active = matchup.includes(String(player.id));
+          return (
+            <button key={player.id} type="button" onClick={()=>toggleMatchup(player.id)}
+              style={{padding:"8px 14px",borderRadius:"999px",border:`1px solid ${active?"transparent":"var(--color-border-secondary)"}`,background:active?"#378ADD":"rgba(255,255,255,0.9)",color:active?"#fff":"var(--color-text-primary)",cursor:"pointer",fontSize:13,fontWeight:active?600:500}}>
+              {player.name}
+            </button>
+          );
+        })}
+      </div>, "Genau zwei Spieler markieren")}
+
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10}}>
+        {field("Vorgabe", <select style={sel} value={handicapMode} onChange={e=>setHandicapMode(e.target.value as "difference"|"full"|"gross")}>
+          {HANDICAP_MODES.map(mode=><option key={mode.id} value={mode.id}>{mode.label}</option>)}
+        </select>, HANDICAP_MODES.find(m=>m.id === handicapMode)?.hint)}
+        {field("Anteil", <input type="number" step="5" min="0" max="100" style={{...inp,opacity:handicapMode === "gross" ? 0.5 : 1}} disabled={handicapMode === "gross"} value={handicapPercent} onChange={e=>setHandicapPercent(parseFloat(e.target.value))}/>, "% der Vorgabe")}
+      </div>
+
+      {handicapPreview.length > 0 && (
+        <div style={{...subtleCardStyle,padding:"12px 14px",marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec,marginBottom:8}}>Vorgabenschläge in diesem Spiel</div>
+          {handicapPreview.map(entry=>(
+            <div key={entry.name} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"3px 0"}}>
+              <span>{entry.name}</span>
+              <span style={{color:COLORS.textSec}}>CH {entry.courseHandicap} → <strong style={{color:"var(--color-text-primary)"}}>{entry.gameHandicap}</strong></span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(110px, 1fr))",gap:10}}>
+        {field("Einsatz", <select style={sel} value={stakeUnit} onChange={e=>setStakeUnit(e.target.value)}>
+          <option value="points">Punkte</option>
+          <option value="eur">Euro</option>
+        </select>)}
+        {[
+          {key:"match", label:"je Matchplay", active:formats.includes("matchplay")},
+          {key:"nassau", label:"je Nassau-Wette", active:formats.includes("nassau")},
+          {key:"skin", label:"je Skin", active:formats.includes("skins")},
+          {key:"point", label:"je Punkt", active:formats.includes("wolf") || formats.includes("bbb")},
+        ].filter(entry=>entry.active).map(entry=>(
+          <div key={entry.key}>{field(entry.label, <input type="number" step="0.5" min="0" style={inp}
+            value={stakes[entry.key]} onChange={e=>setStakes(prev=>({...prev,[entry.key]:e.target.value}))}/>)}</div>
+        ))}
+      </div>
+
+      {problems.length > 0 && (
+        <div style={{marginBottom:14,padding:"10px 14px",borderRadius:"var(--border-radius-md)",background:"#F1EFE8",color:"#5F5E5A",fontSize:12.5}}>
+          {problems.map(problem=><div key={problem}>· {problem}</div>)}
+        </div>
+      )}
+
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={start} disabled={problems.length > 0} style={{...gamesPrimaryBtn,opacity:problems.length?0.5:1,cursor:problems.length?"not-allowed":"pointer"}}>Spiel starten</button>
+        <button onClick={onCancel} style={gamesGhostBtn}>Abbrechen</button>
+      </div>
+    </div>
+  );
+}
+
+/** Punktetabelle, absteigend sortiert – für Skins, Wolf und BBB. */
+function PointsPanel({title, ids, nameById, totals, note=null, children=null}) {
+  return (
+    <div style={{...subtleCardStyle,padding:"12px 14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:6}}>
+        <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec}}>{title}</span>
+        {note}
+      </div>
+      {[...ids].sort((a,b)=>(totals[b] || 0) - (totals[a] || 0)).map(id=>(
+        <div key={id} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"3px 0"}}>
+          <span>{nameById.get(id)}</span>
+          <strong>{totals[id] || 0}</strong>
+        </div>
+      ))}
+      {children}
+    </div>
+  );
+}
+
+function GameStandings({game, state, compact=false}) {
+  const {matchplay, nassau, skins, wolf, bbb, nameById, ids} = state;
+  return (
+    <div style={{display:"grid",gap:10}}>
+      {matchplay && (()=>{
+        const [a, b] = game.matchup;
+        const leaderName = matchplay.status === 0 ? null : nameById.get(matchplay.status > 0 ? a : b);
+        return (
+          <div style={{...subtleCardStyle,padding:"12px 14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10}}>
+              <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec}}>Matchplay</span>
+              <span style={{fontSize:12,color:COLORS.textSec}}>{nameById.get(a)} vs. {nameById.get(b)}</span>
+            </div>
+            <div style={{fontSize:22,fontWeight:700,marginTop:4,color:matchplay.status === 0 ? "var(--color-text-primary)" : COLORS.hcp}}>
+              {matchplay.resultLabel ?? matchplay.statusLabel}
+              {leaderName && !matchplay.resultLabel ? <span style={{fontSize:14,fontWeight:500,color:COLORS.textSec}}> für {leaderName}</span> : null}
+              {matchplay.resultLabel && matchplay.winner ? <span style={{fontSize:14,fontWeight:500,color:COLORS.textSec}}> für {nameById.get(matchplay.winner === "a" ? a : b)}</span> : null}
+            </div>
+            {!compact && (
+              <div style={{fontSize:12,color:COLORS.textSec,marginTop:2}}>
+                {matchplay.decided
+                  ? `entschieden nach Loch ${(matchplay.decidedAtHole ?? 0) + 1}`
+                  : `${matchplay.playedHoles} gespielt · ${matchplay.remainingHoles} offen`}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {nassau && (()=>{
+        const [a, b] = game.matchup;
+        return (
+          <div style={{...subtleCardStyle,padding:"12px 14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:6}}>
+              <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec}}>Nassau</span>
+              <span style={{fontSize:12,color:COLORS.textSec}}>{nameById.get(a)} {nassau.totals.a}:{nassau.totals.b} {nameById.get(b)}</span>
+            </div>
+            {nassau.bets.map(bet=>(
+              <div key={bet.key} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"3px 0",gap:10}}>
+                <span style={{color:bet.press?"#9a5314":"var(--color-text-primary)"}}>{bet.label}</span>
+                <strong style={{whiteSpace:"nowrap"}}>
+                  {bet.result.resultLabel ?? bet.result.statusLabel}
+                  {bet.result.status !== 0 && <span style={{fontWeight:500,color:COLORS.textSec}}> {nameById.get(bet.result.status > 0 ? a : b)}</span>}
+                </strong>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {skins && <PointsPanel title="Skins" ids={ids} nameById={nameById} totals={skins.totals}
+        note={skins.openCarry > 0 ? <span style={{fontSize:12,color:"#9a5314",fontWeight:600}}>{skins.openCarry} im Topf</span> : null}/>}
+
+      {wolf && <PointsPanel title="Wolf" ids={ids} nameById={nameById} totals={wolf.totals}/>}
+
+      {bbb && <PointsPanel title="Bingo Bango Bongo" ids={ids} nameById={nameById} totals={bbb.totals}>
+        {!compact && (
+          <div style={{fontSize:11,color:COLORS.textSec,marginTop:8}}>
+            {ids.map(id=>`${nameById.get(id)}: ${bbb.byAward[id].bingo}/${bbb.byAward[id].bango}/${bbb.byAward[id].bongo}`).join(" · ")}
+            <div style={{marginTop:2}}>Bingo / Bango / Bongo</div>
+          </div>
+        )}
+      </PointsPanel>}
+    </div>
+  );
+}
+
+/** Auswahlreihe aus Spieler-Chips – für Wolf-Partner und Bingo Bango Bongo. */
+function PlayerChips({participants, value, onSelect, extra=null, accent=COLORS.hcp}) {
+  return (
+    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+      {participants.map(participant=>{
+        const active = value === participant.playerId;
+        return (
+          <button key={participant.playerId} type="button"
+            onClick={()=>onSelect(active ? null : participant.playerId)}
+            style={{padding:"7px 12px",borderRadius:"999px",border:`1px solid ${active?"transparent":"var(--color-border-secondary)"}`,background:active?accent:"rgba(255,255,255,0.9)",color:active?"#fff":"var(--color-text-primary)",cursor:"pointer",fontSize:12.5,fontWeight:active?600:500}}>
+            {participant.name}
+          </button>
+        );
+      })}
+      {extra}
+    </div>
+  );
+}
+
+function WolfControls({game, state, holeIndex, onChoice}) {
+  const wolfHole = state.wolf?.holes[holeIndex];
+  if (!wolfHole?.wolfId) return null;
+  const wolfName = state.nameById.get(wolfHole.wolfId);
+  const choice = game.wolfChoices[holeIndex] || {};
+  const candidates = game.participants.filter(p=>p.playerId !== wolfHole.wolfId);
+  const rotationOver = holeIndex >= (state.wolf?.rotationHoles ?? 0);
+
+  const chip = (active, label, onClick, accent) => (
+    <button type="button" onClick={onClick}
+      style={{padding:"7px 12px",borderRadius:"999px",border:`1px solid ${active?"transparent":"var(--color-border-secondary)"}`,background:active?accent:"rgba(255,255,255,0.9)",color:active?"#fff":"var(--color-text-primary)",cursor:"pointer",fontSize:12.5,fontWeight:active?600:500}}>
+      {label}
+    </button>
+  );
+
+  return (
+    <div style={{...subtleCardStyle,padding:"12px 14px",marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}>
+        <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec}}>Wolf</span>
+        <span style={{fontSize:12.5,fontWeight:600}}>{wolfName}{rotationOver ? " (Punktletzter)" : ""}</span>
+      </div>
+      <PlayerChips
+        participants={candidates}
+        value={choice.partnerId ?? null}
+        accent="#7F77DD"
+        onSelect={partnerId=>onChoice(holeIndex, {partnerId, blind:false})}
+        extra={<>
+          {chip(!choice.partnerId && !choice.blind, "Lone Wolf · 3", ()=>onChoice(holeIndex, {partnerId:null, blind:false}), "#C56B1A")}
+          {chip(!choice.partnerId && Boolean(choice.blind), "Blind Wolf · 4", ()=>onChoice(holeIndex, {partnerId:null, blind:true}), "#9a5314")}
+        </>}
+      />
+      {wolfHole.outcome && (
+        <div style={{fontSize:12,color:COLORS.textSec,marginTop:8}}>
+          {wolfHole.outcome === "halved"
+            ? "Loch geteilt – keine Punkte"
+            : `${wolfHole.outcome === "wolf" ? "Wolf-Seite" : "Gegenseite"} gewinnt · ${Object.entries(wolfHole.points).map(([id, value])=>`${state.nameById.get(id)} +${value}`).join(", ")}`}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BbbControls({game, state, holeIndex, onAward}) {
+  const entry = game.bbbAwards[holeIndex] || {};
+  return (
+    <div style={{...subtleCardStyle,padding:"12px 14px",marginBottom:12}}>
+      <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec,marginBottom:8}}>Bingo Bango Bongo</div>
+      {BBB_AWARDS.map(award=>(
+        <div key={award.key} style={{marginBottom:8}}>
+          <div style={{fontSize:12,color:COLORS.textSec,marginBottom:4}}><strong style={{color:"var(--color-text-primary)"}}>{award.label}</strong> · {award.hint}</div>
+          <PlayerChips
+            participants={game.participants}
+            value={entry[award.key] ?? null}
+            accent="#378ADD"
+            onSelect={playerId=>onAward(holeIndex, award.key, playerId)}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NassauPressControls({game, state, holeIndex, onPress}) {
+  const segments = nassauSegments(game.holeCount);
+  const segment = segments.find(entry=>entry.key !== "total" && holeIndex >= entry.from && holeIndex < entry.to)
+    ?? segments[segments.length-1];
+  const alreadyPressed = game.nassauPresses.some(press=>press.segment === segment.key && press.from === holeIndex);
+  const bet = state.nassau?.bets.find(entry=>entry.key === segment.key);
+  const canPress = holeIndex + 1 < segment.to;
+
+  return (
+    <div style={{...subtleCardStyle,padding:"12px 14px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+      <div>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec}}>Nassau · {segment.label}</div>
+        <div style={{fontSize:13,marginTop:2}}>{bet ? bet.result.statusLabel : "A/S"}</div>
+      </div>
+      <button type="button" disabled={alreadyPressed || !canPress}
+        onClick={()=>onPress({from:holeIndex, segment:segment.key})}
+        style={{...gamesGhostBtn,padding:"8px 14px",fontSize:13,opacity:(alreadyPressed || !canPress)?0.4:1,cursor:(alreadyPressed || !canPress)?"not-allowed":"pointer"}}>
+        {alreadyPressed ? "Press läuft" : "Press ab hier"}
+      </button>
+    </div>
+  );
+}
+
+function GameHoleEntry({game, state, onScore, onChoice, onAward, onPress, onFinish, onExit}) {
+  // Beim Öffnen auf das erste noch unvollständige Loch springen.
+  const [holeIndex, setHoleIndex] = useState(()=>{
+    for (let index = 0; index < game.holeCount; index += 1) {
+      if (state.ids.some(id=>!Number.isFinite(game.scores[index]?.[id]))) return index;
+    }
+    return game.holeCount - 1;
+  });
+  const hole = game.holes[holeIndex];
+
+  return (
+    <div>
+      <div style={{...cardStyle,padding:"18px 20px",marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:16}}>
+          <button type="button" onClick={()=>setHoleIndex(i=>Math.max(0, i-1))} disabled={holeIndex === 0}
+            style={{...gamesGhostBtn,padding:"10px 16px",opacity:holeIndex === 0 ? 0.35 : 1}}>←</button>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:26,fontWeight:700,lineHeight:1}}>Loch {hole.nr}</div>
+            <div style={{fontSize:12,color:COLORS.textSec,marginTop:4}}>Par {hole.par} · SI {hole.si} · {holeIndex+1}/{game.holeCount}</div>
+          </div>
+          <button type="button" onClick={()=>setHoleIndex(i=>Math.min(game.holeCount-1, i+1))} disabled={holeIndex === game.holeCount-1}
+            style={{...gamesGhostBtn,padding:"10px 16px",opacity:holeIndex === game.holeCount-1 ? 0.35 : 1}}>→</button>
+        </div>
+
+        {game.participants.map(participant=>{
+          const allocation = state.allocationById.get(participant.playerId);
+          const strokes = allocation?.strokes[holeIndex] ?? 0;
+          const gross = game.scores[holeIndex]?.[participant.playerId];
+          const net = Number.isFinite(gross) ? gross - strokes : null;
+          return (
+            <div key={participant.playerId} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderTop:"1px solid var(--color-border-tertiary)"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{participant.name}</div>
+                <div style={{fontSize:11,color:COLORS.textSec,display:"flex",alignItems:"center",gap:6}}>
+                  <StrokeDots strokes={strokes}/>
+                  {net !== null ? <span>netto {net}</span> : <span>Vorgabe {allocation?.gameHandicap ?? 0}</span>}
+                </div>
+              </div>
+              <ScoreStepper value={gross} par={hole.par} onChange={value=>onScore(holeIndex, participant.playerId, value)}/>
+            </div>
+          );
+        })}
+      </div>
+
+      {state.wolf && <WolfControls game={game} state={state} holeIndex={holeIndex} onChoice={onChoice}/>}
+      {state.bbb && <BbbControls game={game} state={state} holeIndex={holeIndex} onAward={onAward}/>}
+      {state.nassau && <NassauPressControls game={game} state={state} holeIndex={holeIndex} onPress={onPress}/>}
+
+      <GameStandings game={game} state={state} compact/>
+
+      <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
+        <button onClick={onFinish} style={gamesPrimaryBtn}>Spiel beenden</button>
+        <button onClick={onExit} style={gamesGhostBtn}>Später weiterspielen</button>
+      </div>
+    </div>
+  );
+}
+
+function GameScorecard({game, state}) {
+  const cell: CSSProperties = {padding:"6px 8px",textAlign:"center",fontSize:12,borderBottom:"1px solid var(--color-border-tertiary)",whiteSpace:"nowrap"};
+  const headCell: CSSProperties = {...cell,fontWeight:700,color:COLORS.textSec,fontSize:11};
+  const sumFor = (playerId, from, to) => {
+    let total = 0;
+    let any = false;
+    for (let index = from; index < to; index += 1) {
+      const value = game.scores[index]?.[playerId];
+      if (Number.isFinite(value)) { total += value; any = true; }
+    }
+    return any ? total : "–";
+  };
+
+  return (
+    <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+      <table style={{borderCollapse:"collapse",minWidth:"100%"}}>
+        <thead>
+          <tr>
+            <th style={{...headCell,textAlign:"left",position:"sticky",left:0,background:"rgba(255,255,255,0.96)"}}>Loch</th>
+            {game.holes.map(hole=><th key={hole.nr} style={headCell}>{hole.nr}</th>)}
+            {game.holeCount === 18 && <th style={headCell}>Out</th>}
+            {game.holeCount === 18 && <th style={headCell}>In</th>}
+            <th style={headCell}>Ges.</th>
+          </tr>
+          <tr>
+            <th style={{...headCell,textAlign:"left",position:"sticky",left:0,background:"rgba(255,255,255,0.96)"}}>Par / SI</th>
+            {game.holes.map(hole=><th key={hole.nr} style={{...headCell,fontWeight:500}}>{hole.par}<span style={{color:"var(--color-text-secondary)",opacity:0.5,margin:"0 1px"}}>/</span>{hole.si}</th>)}
+            {game.holeCount === 18 && <th style={headCell}/>}
+            {game.holeCount === 18 && <th style={headCell}/>}
+            <th style={headCell}>{totalPar(game.holes)}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {game.participants.map(participant=>{
+            const allocation = state.allocationById.get(participant.playerId);
+            return (
+              <tr key={participant.playerId}>
+                <td style={{...cell,textAlign:"left",fontWeight:600,position:"sticky",left:0,background:"rgba(255,255,255,0.96)"}}>{participant.name}</td>
+                {game.holes.map((hole, index)=>{
+                  const gross = game.scores[index]?.[participant.playerId];
+                  const strokes = allocation?.strokes[index] ?? 0;
+                  const skinWinner = state.skins?.holes[index]?.winnerId === participant.playerId;
+                  return (
+                    <td key={hole.nr} style={{...cell,background:skinWinner?"#ecfbf4":undefined,fontWeight:skinWinner?700:400,position:"relative"}}>
+                      {Number.isFinite(gross) ? gross : "–"}
+                      {Number.isFinite(gross) && strokes > 0 && <sup style={{color:COLORS.hcp,fontSize:9,marginLeft:1}}>{strokes}</sup>}
+                    </td>
+                  );
+                })}
+                {game.holeCount === 18 && <td style={{...cell,fontWeight:600}}>{sumFor(participant.playerId, 0, 9)}</td>}
+                {game.holeCount === 18 && <td style={{...cell,fontWeight:600}}>{sumFor(participant.playerId, 9, 18)}</td>}
+                <td style={{...cell,fontWeight:700}}>{sumFor(participant.playerId, 0, game.holeCount)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div style={{fontSize:11,color:COLORS.textSec,marginTop:8}}>
+        Hochgestellt = Vorgabenschläge auf diesem Loch{state.skins ? " · grün hinterlegt = Skin gewonnen" : ""}
+      </div>
+    </div>
+  );
+}
+
+function GameResultView({game, state, meParticipant, onCreateHcpRound, onReopen, onExit}) {
+  const {balanceList} = state;
+  const unit = game.stake.unit;
+  const transfers = useMemo(()=>buildSettlement(balanceList), [balanceList]);
+
+  // Für die HCP-Übernahme zählt immer das volle Course Handicap, nicht die
+  // Lochspiel-Differenz aus diesem Spiel.
+  const hcpPreview = useMemo(()=>{
+    if (!meParticipant) return null;
+    const [allocation] = buildAllocations(
+      [{id: meParticipant.playerId, courseHandicap: meParticipant.courseHandicap}],
+      game.holes,
+      {mode:"full", percent:100},
+    );
+    return {
+      allocation,
+      summary: stablefordFromHoles(meParticipant.playerId, game.scores, allocation, game.holes),
+    };
+  }, [game, meParticipant]);
+
+  return (
+    <div>
+      <GameStandings game={game} state={state}/>
+
+      <div style={{...cardStyle,padding:"16px 18px",marginTop:14}}>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec,marginBottom:10}}>Abrechnung</div>
+        {balanceList.map(entry=>(
+          <div key={entry.id} style={{display:"flex",justifyContent:"space-between",fontSize:14,padding:"5px 0",borderBottom:"1px solid var(--color-border-tertiary)"}}>
+            <span>{entry.name}</span>
+            <strong style={{color:entry.amount > 0 ? COLORS.hcp : entry.amount < 0 ? "#E24B4A" : COLORS.textSec}}>
+              {formatSignedStake(entry.amount, unit)}
+            </strong>
+          </div>
+        ))}
+        {transfers.length > 0 ? (
+          <div style={{marginTop:12,fontSize:13,color:COLORS.textSec}}>
+            {transfers.map((transfer, index)=>(
+              <div key={index}>{transfer.from} zahlt {transfer.to} <strong style={{color:"var(--color-text-primary)"}}>{formatStake(transfer.amount, unit)}</strong></div>
+            ))}
+          </div>
+        ) : (
+          <div style={{marginTop:12,fontSize:13,color:COLORS.textSec}}>Ausgeglichen – niemand schuldet jemandem etwas.</div>
+        )}
+      </div>
+
+      <div style={{...cardStyle,padding:"16px 18px",marginTop:14}}>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec,marginBottom:10}}>Scorekarte</div>
+        <GameScorecard game={game} state={state}/>
+      </div>
+
+      {hcpPreview && (
+        <div style={{...cardStyle,padding:"16px 18px",marginTop:14}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec,marginBottom:8}}>In den HCP-Tracker übernehmen</div>
+          {game.hcpRoundId ? (
+            <div style={{fontSize:13,color:"#085041"}}>✓ Bereits als Runde übernommen.</div>
+          ) : hcpPreview.summary.complete ? (
+            <>
+              <div style={{fontSize:13,color:COLORS.textSec,marginBottom:12}}>
+                Aus deinen Schlägen: <strong style={{color:"var(--color-text-primary)"}}>{hcpPreview.summary.netPoints} Netto-Stableford-Punkte</strong> bei
+                Brutto {hcpPreview.summary.grossTotal} und Spielvorgabe {hcpPreview.allocation.gameHandicap}. Eingereicht und Marker-Unterschrift trägst du im nächsten Schritt ein.
+              </div>
+              <button onClick={()=>onCreateHcpRound({
+                date: game.date,
+                courseId: game.courseId,
+                courseName: game.courseName,
+                courseRating: game.courseRating,
+                slopeRating: game.slopeRating,
+                par: game.coursePar,
+                holes: game.holeCount,
+                mode: "Stableford",
+                format: "Einzel",
+                playingHcp: hcpPreview.allocation.gameHandicap,
+                stablefordPoints: hcpPreview.summary.netPoints,
+                submitted: false,
+                markerSigned: false,
+                nineHoleAllowed: false,
+                gameId: game.id,
+              })} style={gamesPrimaryBtn}>Als HCP-Runde speichern</button>
+            </>
+          ) : (
+            <div style={{fontSize:13,color:COLORS.textSec}}>
+              Erst wenn alle {game.holeCount} Löcher erfasst sind ({hcpPreview.summary.holesCounted} bisher), lässt sich daraus eine HCP-Runde ableiten.
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
+        <button onClick={onExit} style={gamesPrimaryBtn}>Fertig</button>
+        <button onClick={onReopen} style={gamesGhostBtn}>Scores nachtragen</button>
+      </div>
+    </div>
+  );
+}
+
+function GameRow({game, onOpen, onDelete}) {
+  const state = useGameState(game);
+  const running = game.status === "running";
+  const leader = totals => {
+    const best = [...state.ids].sort((a,b)=>(totals[b] || 0) - (totals[a] || 0))[0];
+    return `${state.nameById.get(best)} ${totals[best] || 0}`;
+  };
+  const summary = [];
+  if (state.matchplay) summary.push(`Matchplay ${state.matchplay.resultLabel ?? state.matchplay.statusLabel}`);
+  if (state.nassau) summary.push(`Nassau ${state.nassau.totals.a}:${state.nassau.totals.b}`);
+  if (state.skins) summary.push(`Skins: ${leader(state.skins.totals)}`);
+  if (state.wolf) summary.push(`Wolf: ${leader(state.wolf.totals)}`);
+  if (state.bbb) summary.push(`BBB: ${leader(state.bbb.totals)}`);
+
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:"var(--border-radius-md)",border:`1px solid ${running?"rgba(29,158,117,0.38)":"var(--color-border-tertiary)"}`,background:running?"linear-gradient(180deg, #ecfbf4 0%, #e3f6ee 100%)":"rgba(255,255,255,0.9)",boxShadow:"var(--shadow-soft)",marginBottom:10}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{fontWeight:600,fontSize:14}}>{game.participants.map(p=>p.name).join(" · ")}</span>
+          {running ? badge("läuft", "#E1F5EE", "#085041") : badge("beendet", "#F1EFE8", "#5F5E5A")}
+          {game.handicap.mode === "gross" ? badge("Brutto", "#E6F1FB", "#0C447C") : badge(`Netto ${game.handicap.percent}%`, "#EEEDFE", "#3C3489")}
+        </div>
+        <div style={{fontSize:12,color:COLORS.textSec,marginTop:2}}>
+          {game.date} · {game.courseName} · {game.holeCount} Loch · {state.played}/{game.holeCount} erfasst
+        </div>
+        {summary.length > 0 && (
+          <div style={{fontSize:12,color:"var(--color-text-primary)",marginTop:3,fontWeight:500}}>{summary.join("  ·  ")}</div>
+        )}
+      </div>
+      <div style={{display:"flex",gap:6,flexShrink:0}}>
+        <button onClick={onOpen} style={{padding:"6px 12px",borderRadius:"var(--border-radius-md)",border:"none",background:COLORS.hcp,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:600}}>
+          {running ? "Weiter" : "Ansehen"}
+        </button>
+        <button onClick={onDelete} style={{padding:"6px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid #E24B4A",background:"transparent",cursor:"pointer",fontSize:12,color:"#E24B4A"}}>Löschen</button>
+      </div>
+    </div>
+  );
+}
+
+/** Bilanz aus allen beendeten Matchplay-Spielen, je Gegner. */
+function HeadToHead({games, mePlayerId}) {
+  const records = useMemo(()=>{
+    const map = new Map();
+    for (const game of games) {
+      if (game.status !== "finished") continue;
+      if (!game.formats.includes("matchplay") || game.matchup?.length !== 2) continue;
+      if (!game.matchup.includes(mePlayerId)) continue;
+
+      const allocations = buildAllocations(
+        game.participants.map(p=>({id:p.playerId, courseHandicap:p.courseHandicap})),
+        game.holes,
+        game.handicap,
+      );
+      const result = scoreMatchplay(game.matchup[0], game.matchup[1], game.scores, allocations, game.holes);
+      if (!result.complete) continue;
+
+      const meIsA = game.matchup[0] === mePlayerId;
+      const opponentId = meIsA ? game.matchup[1] : game.matchup[0];
+      const opponent = game.participants.find(p=>p.playerId === opponentId);
+      if (!opponent) continue;
+
+      const entry = map.get(opponentId) || {name:opponent.name, won:0, lost:0, halved:0};
+      if (!result.winner) entry.halved += 1;
+      else if ((result.winner === "a") === meIsA) entry.won += 1;
+      else entry.lost += 1;
+      map.set(opponentId, entry);
+    }
+    return [...map.values()].sort((a,b)=>(b.won + b.lost + b.halved) - (a.won + a.lost + a.halved));
+  }, [games, mePlayerId]);
+
+  if (!records.length) return null;
+
+  return (
+    <div style={{...cardStyle,padding:"16px 18px",marginBottom:16}}>
+      <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec,marginBottom:10}}>Bilanz im Matchplay</div>
+      {records.map(record=>(
+        <div key={record.name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:14,padding:"6px 0",borderBottom:"1px solid var(--color-border-tertiary)"}}>
+          <span>gegen {record.name}</span>
+          <span style={{display:"flex",gap:8,fontSize:13}}>
+            <span style={{color:COLORS.hcp,fontWeight:700}}>{record.won} S</span>
+            <span style={{color:COLORS.textSec}}>{record.halved} U</span>
+            <span style={{color:"#E24B4A",fontWeight:700}}>{record.lost} N</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function GamePlayView({game, onScore, onChoice, onAward, onPress, onFinish, onReopen, onExit, onCreateHcpRound}) {
+  const state = useGameState(game);
+  const meParticipant = game.participants.find(p=>p.isMe);
+  if (game.status === "finished") {
+    return <GameResultView game={game} state={state} meParticipant={meParticipant} onCreateHcpRound={onCreateHcpRound} onReopen={onReopen} onExit={onExit}/>;
+  }
+  return <GameHoleEntry game={game} state={state} onScore={onScore} onChoice={onChoice} onAward={onAward} onPress={onPress} onFinish={onFinish} onExit={onExit}/>;
+}
+
+function GamesView({games, courses, players, profile, displayHcp, onStartGame, onAddPlayer, onScore, onWolfChoice, onBbbAward, onNassauPress, onFinishGame, onReopenGame, onDeleteGame, onCreateHcpRound}) {
+  const [screen, setScreen] = useState<{mode:"list"|"setup"|"play"; gameId?:number}>({mode:"list"});
+  const openGame = games.find(g=>g.id === screen.gameId);
+  const mePlayer = players.find(p=>p.isMe);
+
+  if (screen.mode === "setup") {
+    return (
+      <div style={{...cardStyle,padding:"20px 22px"}}>
+        <h2 style={{fontSize:18,fontWeight:600,margin:"0 0 16px"}}>Neues Spiel</h2>
+        <GameSetupForm
+          courses={courses}
+          players={players}
+          profileName={profile.name}
+          displayHcp={displayHcp}
+          onStart={draft=>setScreen({mode:"play", gameId:onStartGame(draft)})}
+          onAddPlayer={onAddPlayer}
+          onCancel={()=>setScreen({mode:"list"})}
+        />
+      </div>
+    );
+  }
+
+  if (screen.mode === "play" && openGame) {
+    return (
+      <div>
+        <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+          <h2 style={{fontSize:18,fontWeight:600,margin:0}}>{openGame.courseName}</h2>
+          <button onClick={()=>setScreen({mode:"list"})} style={{...gamesGhostBtn,padding:"6px 12px",fontSize:13}}>Übersicht</button>
+        </div>
+        <GamePlayView
+          game={openGame}
+          onScore={(holeIndex, playerId, value)=>onScore(openGame.id, holeIndex, playerId, value)}
+          onChoice={(holeIndex, choice)=>onWolfChoice(openGame.id, holeIndex, choice)}
+          onAward={(holeIndex, award, playerId)=>onBbbAward(openGame.id, holeIndex, award, playerId)}
+          onPress={press=>onNassauPress(openGame.id, press)}
+          onFinish={()=>onFinishGame(openGame.id)}
+          onReopen={()=>onReopenGame(openGame.id)}
+          onExit={()=>setScreen({mode:"list"})}
+          onCreateHcpRound={prefill=>onCreateHcpRound(openGame.id, prefill)}
+        />
+      </div>
+    );
+  }
+
+  const running = games.filter(g=>g.status === "running");
+  const finished = games.filter(g=>g.status === "finished");
+  const noCourses = courses.length === 0;
+
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+        <div>
+          <h2 style={{fontSize:18,fontWeight:600,margin:0}}>Games</h2>
+          <p style={{fontSize:13,color:COLORS.textSec,margin:"4px 0 0"}}>Matchplay und Skins gegen deine Mitspieler</p>
+        </div>
+        <button onClick={()=>setScreen({mode:"setup"})} disabled={noCourses}
+          style={{...gamesPrimaryBtn,opacity:noCourses?0.5:1,cursor:noCourses?"not-allowed":"pointer"}}>Neues Spiel</button>
+      </div>
+
+      {noCourses && (
+        <div style={{...cardStyle,padding:"16px 18px",marginBottom:16,fontSize:13,color:COLORS.textSec}}>
+          Für Games braucht es mindestens einen Platz mit Course Rating und Slope. Lege ihn unter <strong>Plätze</strong> an.
+        </div>
+      )}
+
+      {running.length > 0 && (
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec,marginBottom:8}}>Laufend</div>
+          {running.map(game=>(
+            <GameRow key={game.id} game={game} onOpen={()=>setScreen({mode:"play", gameId:game.id})} onDelete={()=>onDeleteGame(game.id)}/>
+          ))}
+        </div>
+      )}
+
+      {mePlayer && <HeadToHead games={games} mePlayerId={String(mePlayer.id)}/>}
+
+      <div>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec,marginBottom:8}}>Historie</div>
+        {finished.length === 0
+          ? <div style={{...subtleCardStyle,padding:"18px 20px",fontSize:13,color:COLORS.textSec}}>Noch keine beendeten Spiele.</div>
+          : finished.map(game=>(
+              <GameRow key={game.id} game={game} onOpen={()=>setScreen({mode:"play", gameId:game.id})} onDelete={()=>onDeleteGame(game.id)}/>
+            ))}
+      </div>
     </div>
   );
 }
@@ -2385,6 +3521,7 @@ const NAV_COLLAPSED_KEY = "golf_hcp_nav_collapsed";
 const DESKTOP_QUERY = "(min-width: 1024px)";
 const NAV_ITEMS = [
   { id:"dashboard", label:"Dashboard", icon:["M4 13h6V4H4v9Z","M14 20h6v-9h-6v9Z","M4 20h6v-4H4v4Z","M14 8h6V4h-6v4Z"] },
+  { id:"games", label:"Games", icon:["M7.5 4h9v4.5a4.5 4.5 0 01-9 0V4Z","M7.5 5.5H4.5v1A3.5 3.5 0 008 10","M16.5 5.5h3v1A3.5 3.5 0 0116 10","M12 13v3.5","M8.5 20h7"] },
   { id:"simulator", label:"Simulator", icon:["M4 17l5-5 3 3 7-7","M15 8h5v5"] },
   { id:"rounds", label:"Runden", icon:["M8 6h12","M8 12h12","M8 18h12","M4 6h.01","M4 12h.01","M4 18h.01"] },
   { id:"courses", label:"Plätze", icon:["M7 20V4","M7 5.2l9 2.6-9 2.6","M4.5 20h6"] },
@@ -2587,13 +3724,94 @@ export default function App() {
 
   const updateDB = fn => setDB(prev=>{ const next=normalizeDB(fn({...prev})); saveDB(next); return next; });
 
-  const saveRound = r => { updateDB(db=>{ if(r.id) db.rounds=db.rounds.map(x=>x.id===r.id?r:x); else { r.id=db.nextRoundId++; r.createdAt=new Date().toISOString(); db.rounds=[...db.rounds,r]; } return db; }); setForm(null); };
-  const saveCourse = c => { updateDB(db=>{ if(c.id) db.courses=db.courses.map(x=>x.id===c.id?c:x); else { c.id=db.nextCourseId++; db.courses=[...db.courses,c]; } return db; }); setCourseForm(null); };
-  const saveSimulatedRound = r => updateDB(db=>{ if(r.id) db.simulatedRounds=db.simulatedRounds.map(x=>x.id===r.id?r:x); else { r.id=db.nextRoundId++; db.simulatedRounds=[...db.simulatedRounds,r]; } return db; });
+  // Die Updater dürfen ihr Argument nicht verändern: React ruft sie im
+  // Entwicklungsmodus (StrictMode) zweimal mit demselben Ausgangszustand auf.
+  // Würde hier r.id gesetzt, liefe der zweite Durchlauf in den "bestehenden
+  // Datensatz ändern"-Zweig und der neue Eintrag ginge verloren.
+  const saveRound = r => {
+    updateDB(db=>{
+      const saved = r.id ? r : {...r, id:db.nextRoundId, createdAt:new Date().toISOString()};
+      if (r.id) db.rounds=db.rounds.map(x=>x.id===r.id?saved:x);
+      else { db.rounds=[...db.rounds,saved]; db.nextRoundId=db.nextRoundId+1; }
+      if (saved.gameId) db.games=db.games.map(g=>g.id===saved.gameId?{...g,hcpRoundId:saved.id}:g);
+      return db;
+    });
+    setForm(null);
+  };
+  const saveCourse = c => {
+    updateDB(db=>{
+      if (c.id) db.courses=db.courses.map(x=>x.id===c.id?c:x);
+      else { db.courses=[...db.courses,{...c,id:db.nextCourseId}]; db.nextCourseId=db.nextCourseId+1; }
+      return db;
+    });
+    setCourseForm(null);
+  };
+  const saveSimulatedRound = r => updateDB(db=>{
+    if (r.id) db.simulatedRounds=db.simulatedRounds.map(x=>x.id===r.id?r:x);
+    else { db.simulatedRounds=[...db.simulatedRounds,{...r,id:db.nextRoundId}]; db.nextRoundId=db.nextRoundId+1; }
+    return db;
+  });
   const saveProfile = p => updateDB(db=>{ db.profile=p; return db; });
   const deleteRound = id => { updateDB(db=>{ db.rounds=db.rounds.filter(r=>r.id!==id); return db; }); setDeleteConfirm(null); };
   const deleteSimulatedRound = id => updateDB(db=>{ db.simulatedRounds=db.simulatedRounds.filter(r=>r.id!==id); return db; });
   const clearSimulatedRounds = () => updateDB(db=>{ db.simulatedRounds=[]; return db; });
+
+  // --- Games ---
+  const addPlayer = player => {
+    const id = db.nextPlayerId;
+    updateDB(db=>{ db.players=[...db.players,{...player,id}]; db.nextPlayerId=id+1; return db; });
+    return id;
+  };
+  const startGame = draft => {
+    const id = db.nextGameId;
+    updateDB(db=>{
+      db.games=[...db.games,{
+        ...draft,
+        id,
+        createdAt:new Date().toISOString(),
+        scores:Array.from({length:draft.holeCount},()=>({})),
+        status:"running",
+      }];
+      db.nextGameId=id+1;
+      return db;
+    });
+    return id;
+  };
+  const updateGame = (gameId, fn) => updateDB(db=>{
+    db.games=db.games.map(game=>game.id===gameId?fn({...game}):game);
+    return db;
+  });
+  const setGameScore = (gameId, holeIndex, playerId, value) => updateGame(gameId, game=>{
+    game.scores=game.scores.map((row,index)=>{
+      if (index!==holeIndex) return row;
+      const next={...row};
+      if (Number.isFinite(value)) next[playerId]=value; else delete next[playerId];
+      return next;
+    });
+    return game;
+  });
+  const setWolfChoice = (gameId, holeIndex, choice) => updateGame(gameId, game=>({
+    ...game,
+    wolfChoices: game.wolfChoices.map((entry, index)=>index===holeIndex ? {...entry, ...choice} : entry),
+  }));
+  const setBbbAward = (gameId, holeIndex, award, playerId) => updateGame(gameId, game=>({
+    ...game,
+    bbbAwards: game.bbbAwards.map((entry, index)=>index===holeIndex ? {...entry, [award]:playerId} : entry),
+  }));
+  const addNassauPress = (gameId, press) => updateGame(gameId, game=>(
+    game.nassauPresses.some(entry=>entry.segment===press.segment && entry.from===press.from)
+      ? game
+      : {...game, nassauPresses:[...game.nassauPresses, press]}
+  ));
+  const finishGame = gameId => updateGame(gameId, game=>({...game, status:"finished", finishedAt:new Date().toISOString()}));
+  const reopenGame = gameId => updateGame(gameId, game=>({...game, status:"running"}));
+  const deleteGame = gameId => updateDB(db=>{ db.games=db.games.filter(game=>game.id!==gameId); return db; });
+  // Die Verknüpfung entsteht erst beim tatsächlichen Speichern der Runde (siehe
+  // saveRound) – bricht der Nutzer das Formular ab, bleibt das Spiel unverknüpft.
+  const createHcpRoundFromGame = (gameId, prefill) => {
+    setForm({...prefill, gameId});
+    setView("rounds");
+  };
 
   const sortedRounds = useMemo(()=>[...db.rounds].sort((a,b)=>b.date.localeCompare(a.date)),[db.rounds]);
   const hcpTimeline = useMemo(()=>buildHandicapTimeline(db.rounds, db.profile.startHcp ?? 54),[db.rounds, db.profile.startHcp]);
@@ -2622,6 +3840,22 @@ export default function App() {
       .slice(0,take);
   },[recentTimeline, hcpRule]);
   const displayHcp = estimatedHcp??db.profile.startHcp??54;
+
+  // Der Profilinhaber ist in Games ein Spieler wie jeder andere – nur dass sein
+  // Handicap-Index aus dem Tracker kommt statt von Hand gepflegt zu werden.
+  useEffect(()=>{
+    if (!db.profile.name) return;
+    const me = db.players.find(p=>p.isMe);
+    if (me && me.name===db.profile.name && me.hcpIndex===round1(displayHcp)) return;
+    updateDB(db=>{
+      const players=[...db.players];
+      const index=players.findIndex(p=>p.isMe);
+      if (index>=0) players[index]={...players[index], name:db.profile.name, hcpIndex:round1(displayHcp)};
+      else { players.push({id:db.nextPlayerId, name:db.profile.name, hcpIndex:round1(displayHcp), isMe:true}); db.nextPlayerId+=1; }
+      db.players=players;
+      return db;
+    });
+  },[db.profile.name, db.players, displayHcp]);
 
   const newRound = () => setForm({ date:new Date().toISOString().slice(0,10), mode:"Stableford", format:"Einzel", holes:18, submitted:false, markerSigned:false, nineHoleAllowed:false, playingHcp:displayHcp });
 
@@ -2679,6 +3913,23 @@ export default function App() {
           </div>
 
           {view==="dashboard" && <Dashboard rounds={sortedRounds} hcpRounds={hcpRounds} recentDiffs={recentDiffs} estimatedHcp={estimatedHcp} onNew={()=>{newRound();setView("rounds");}} hcpTimeline={hcpTimeline} diffByRoundId={diffByRoundId} variant="focus"/>}
+          {view==="games" && <GamesView
+            games={[...db.games].sort((a,b)=>String(b.date).localeCompare(String(a.date)) || b.id-a.id)}
+            courses={db.courses}
+            players={db.players}
+            profile={db.profile}
+            displayHcp={displayHcp}
+            onStartGame={startGame}
+            onAddPlayer={addPlayer}
+            onScore={setGameScore}
+            onWolfChoice={setWolfChoice}
+            onBbbAward={setBbbAward}
+            onNassauPress={addNassauPress}
+            onFinishGame={finishGame}
+            onReopenGame={reopenGame}
+            onDeleteGame={deleteGame}
+            onCreateHcpRound={createHcpRoundFromGame}
+          />}
           {view==="simulator" && <HcpSimulator courses={db.courses} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} simulatedRounds={db.simulatedRounds} onAddRound={saveSimulatedRound} onDeleteRound={deleteSimulatedRound} onClearRounds={clearSimulatedRounds}/>}
           {view==="rounds" && <RoundList rounds={sortedRounds} courses={db.courses} onNew={newRound} onEdit={r=>setForm({...r})} onDelete={id=>setDeleteConfirm(id)} countingIds={countingIds} diffByRoundId={diffByRoundId}/>}
           {view==="courses" && <CourseList courses={db.courses} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:"",nineHolePhcpFactor:0.5})} onEdit={c=>setCourseForm({...c})}/>}
