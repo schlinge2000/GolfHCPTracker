@@ -156,13 +156,18 @@ function normalizeGame(game) {
 function normalizeDB(data) {
   const safe = data && typeof data === "object" ? data : {};
   const courses = Array.isArray(safe.courses) ? safe.courses.map(normalizeCourse) : [];
-  const rounds = Array.isArray(safe.rounds) ? safe.rounds : [];
-  const simulatedRounds = Array.isArray(safe.simulatedRounds) ? safe.simulatedRounds : [];
+  // Simulationsrunden lagen früher in einer eigenen Liste (Rubrik "Simulator").
+  // Inzwischen sind sie normale Runden mit dem Kennzeichen "simulated", deshalb
+  // wandern Altbestände beim Laden in die Rundenliste.
+  const legacySimulated = Array.isArray(safe.simulatedRounds)
+    ? safe.simulatedRounds.map(round=>({...round, simulated:true}))
+    : [];
+  const rounds = [...(Array.isArray(safe.rounds) ? safe.rounds : []), ...legacySimulated];
   const players = Array.isArray(safe.players) ? safe.players.map(normalizePlayer) : [];
   const games = Array.isArray(safe.games) ? safe.games.map(normalizeGame) : [];
   const nextRoundId = Number.isFinite(safe.nextRoundId)
     ? safe.nextRoundId
-    : [...rounds, ...simulatedRounds].reduce((maxId, round)=>Math.max(maxId, round.id || 0), 0) + 1;
+    : rounds.reduce((maxId, round)=>Math.max(maxId, round.id || 0), 0) + 1;
   const nextCourseId = Number.isFinite(safe.nextCourseId)
     ? safe.nextCourseId
     : courses.reduce((maxId, course)=>Math.max(maxId, course.id || 0), 0) + 1;
@@ -176,7 +181,6 @@ function normalizeDB(data) {
   return {
     courses,
     rounds,
-    simulatedRounds,
     players,
     games,
     profile: safe.profile || {name:"", startHcp:54},
@@ -549,7 +553,6 @@ function replaceGolfDeImport(currentDb, importedRounds) {
     profile: normalizeDB(currentDb).profile,
     courses: [],
     rounds: [],
-    simulatedRounds: [],
     nextRoundId: 1,
     nextCourseId: 1,
   });
@@ -646,7 +649,7 @@ function buildProjectedHandicap({recentDiffs, currentHcp, round}) {
   };
 }
 
-// Erzeugt die Schritt-für-Schritt-Erklärung für die Simulator-Vorschau.
+// Erzeugt die Schritt-für-Schritt-Erklärung für die Vorschau im Rundenformular.
 function buildPreviewExplanation(p) {
   const lines = [];
   const take = p.rule.take;
@@ -1206,7 +1209,7 @@ function ProfileForm({profile, onSave, isSetup=false}) {
   );
 }
 
-function RoundForm({initial, courses, currentHcp, onSave, onCancel}) {
+function RoundForm({initial, courses, currentHcp, recentDiffs=[], nextSimulationDate=null, onSave, onCancel}) {
   const [r, setR] = useState(initial);
   const set = (k,v) => setR(prev=>({...prev,[k]:v}));
   const eligible = isHcpEligible(r);
@@ -1221,6 +1224,45 @@ function RoundForm({initial, courses, currentHcp, onSave, onCancel}) {
   }, r.holes), [currentHcp, r.courseRating, r.slopeRating, r.par, r.holes, selectedCourse?.nineHolePhcpFactor]);
 
   const prefill = c => setR(prev=>({...prev,courseId:c.id,courseName:c.name,courseRating:c.courseRating,slopeRating:c.slopeRating,par:c.par}));
+
+  // Eine Simulation soll im Dashboard wirken, also setzt der Haken die
+  // Wertbarkeits-Kennzeichen gleich mit. Sie bleiben editierbar, falls jemand
+  // bewusst eine nicht wertbare Runde durchspielen will.
+  const toggleSimulated = on => setR(prev=>{
+    if (!on) return {...prev, simulated:false};
+    return {
+      ...prev,
+      simulated:true,
+      submitted:true,
+      markerSigned:true,
+      nineHoleAllowed:parseInt(prev.holes)===9 ? true : prev.nineHoleAllowed,
+      // Ein Was-wäre-wenn gilt meist der nächsten Runde – solange das Datum
+      // unangetastet ist, springt es auf den Tag nach der letzten Runde.
+      date:(!prev.id && nextSimulationDate && prev.date===initial.date) ? nextSimulationDate : prev.date,
+    };
+  });
+
+  const previewRound = useMemo(()=>({
+    holes:r.holes,
+    mode:r.mode,
+    courseRating:r.courseRating,
+    slopeRating:r.slopeRating,
+    par:r.par,
+    playingHcp:r.playingHcp,
+    adjustedGross:r.mode==="Stableford"
+      ? calcAdjustedGrossFromStableford({ par, playingHcp:phcp, holes:r.holes, stablefordPoints:parseInt(r.stablefordPoints) })
+      : parseInt(r.adjustedGross),
+    gbe:r.gbe,
+  }), [r, par, phcp]);
+
+  // Vorschau nur für neue Simulationsrunden: bei einer bereits gespeicherten
+  // Runde steckt ihr Differenzial schon im Wertungsfenster, die Rechnung wäre
+  // doppelt.
+  const preview = useMemo(()=>{
+    if (!r.simulated || r.id || !eligible) return null;
+    if (getGrossScore(previewRound)===null) return null;
+    return buildProjectedHandicap({ recentDiffs, currentHcp, round:previewRound });
+  }, [r.simulated, r.id, eligible, previewRound, recentDiffs, currentHcp]);
 
   const handleSave = () => {
     if (!r.date) return alert("Datum erforderlich");
@@ -1311,15 +1353,45 @@ function RoundForm({initial, courses, currentHcp, onSave, onCancel}) {
           Marker unterschrieben
         </label>
       </div>
-      <div style={{padding:"10px 14px",borderRadius:"var(--border-radius-md)",background:eligible?"#E1F5EE":"#F1EFE8",marginBottom:16,fontSize:13,color:eligible?"#085041":"#5F5E5A"}}>
-        {eligible?"✓ Diese Runde wird HCP-wirksam eingehen.":"✗ Diese Runde ist nicht HCP-wirksam."}
+      <div style={{padding:"10px 14px",borderRadius:"var(--border-radius-md)",border:`1px solid ${r.simulated?"rgba(197,107,26,0.32)":"var(--color-border-tertiary)"}`,background:r.simulated?"linear-gradient(180deg, #fff9f2 0%, #fff1df 100%)":"rgba(255,255,255,0.6)",marginBottom:14}}>
+        <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer",fontWeight:r.simulated?600:400,color:r.simulated?"#9a5314":"var(--color-text-primary)"}}>
+          <input type="checkbox" checked={r.simulated||false} onChange={e=>toggleSimulated(e.target.checked)}/>
+          Simulation (was wäre wenn)
+        </label>
+        <div style={{fontSize:12,color:"var(--color-text-secondary)",marginTop:6,lineHeight:1.5}}>
+          Läuft im Dashboard mit, bleibt aber überall orange als Simulation markiert. Löschen genügt, um zum echten Index zurückzukehren.
+        </div>
+      </div>
+      <div style={{padding:"10px 14px",borderRadius:"var(--border-radius-md)",background:eligible?(r.simulated?"#FFF1DF":"#E1F5EE"):"#F1EFE8",marginBottom:16,fontSize:13,color:eligible?(r.simulated?"#9a5314":"#085041"):"#5F5E5A"}}>
+        {eligible
+          ? (r.simulated ? "✓ Simulation: läuft im Dashboard als Was-wäre-wenn mit." : "✓ Diese Runde wird HCP-wirksam eingehen.")
+          : "✗ Diese Runde ist nicht HCP-wirksam."}
         {!r.submitted&&" → Runde einreichen."}
         {r.submitted&&!r.markerSigned&&" → Marker-Unterschrift fehlt."}
         {r.submitted&&r.markerSigned&&r.format!=="Einzel"&&" → Nur Einzel ist HCP-wirksam."}
         {parseInt(r.holes)===9&&!r.nineHoleAllowed&&" → Checkbox '9-Loch HCP-wirksam' aktivieren."}
       </div>
+      {preview && (
+        <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:16,border:"1px solid rgba(197,107,26,0.26)",background:"linear-gradient(180deg, #fff9f2 0%, #fff1df 100%)"}}>
+          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"#9a5314",marginBottom:8}}>Vorschau</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
+            <div><div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Differenzial</div><div style={{fontSize:22,fontWeight:600}}>{preview.diff.toFixed(1)}</div></div>
+            <div><div style={{fontSize:12,color:"var(--color-text-secondary)"}}>HCP danach</div><div style={{fontSize:22,fontWeight:600,color:COLORS.hcp}}>{preview.nextHcp.toFixed(1)}</div></div>
+            <div><div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Zählt?</div><div style={{fontSize:16,fontWeight:600,color:preview.wouldCount ? "#085041" : "#9a5314"}}>{preview.wouldCount ? "Ja" : "Eher nicht"}</div></div>
+          </div>
+          <div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid rgba(154,83,20,0.24)"}}>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"#9a5314",marginBottom:6}}>So verändert sich die Wertung</div>
+            {buildPreviewExplanation(preview).map((line,i)=>(
+              <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.5,marginBottom:4}}>
+                <span style={{color:"#9a5314",flexShrink:0}}>{i+1}.</span>
+                <span>{line}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div style={{display:"flex",gap:8}}>
-        <button onClick={handleSave} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:500,fontSize:14}}>Speichern</button>
+        <button onClick={handleSave} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:r.simulated?"#C56B1A":COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:500,fontSize:14}}>{r.simulated?"Simulation speichern":"Speichern"}</button>
         <button onClick={onCancel} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:"0.5px solid var(--color-border-tertiary)",cursor:"pointer",fontSize:14,color:"var(--color-text-primary)"}}>Abbrechen</button>
       </div>
     </div>
@@ -1494,10 +1566,13 @@ function RoundList({rounds, courses, onNew, onEdit, onDelete, countingIds, diffB
     setSortDir((key==="sd"||key==="gross"||key==="course") ? "asc" : "desc");
   };
 
+  const hasSimulated = rounds.some(r=>r.simulated);
+
   const filtered = rounds.filter(r=>{
     if (filter==="hcp") return isHcpEligible(r);
     if (filter==="no_hcp") return !isHcpEligible(r);
     if (filter==="counting") return countingIds.has(r.id);
+    if (filter==="simulated") return Boolean(r.simulated);
     return true;
   });
 
@@ -1540,7 +1615,7 @@ function RoundList({rounds, courses, onNew, onEdit, onDelete, countingIds, diffB
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:12,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          {[["all","Alle"],["hcp","HCP-wirksam"],["counting",`Zählt aktuell (${take})`],["no_hcp","Nicht wirksam"]].map(([v,l])=>(
+          {[["all","Alle"],["hcp","HCP-wirksam"],["counting",`Zählt aktuell (${take})`],["no_hcp","Nicht wirksam"],...(hasSimulated?[["simulated","Simulation"]]:[])].map(([v,l])=>(
             <button key={v} onClick={()=>setFilter(v)} style={{fontSize:12,padding:"4px 10px",borderRadius:"var(--border-radius-md)",background:filter===v?COLORS.hcp:"transparent",color:filter===v?"#fff":"var(--color-text-secondary)",border:`0.5px solid ${filter===v?COLORS.hcp:"var(--color-border-tertiary)"}`,cursor:"pointer"}}>{l}</button>
           ))}
         </div>
@@ -1671,234 +1746,6 @@ function CourseList({courses, onNew, onEdit}) {
           />
         </Modal>
       )}
-    </div>
-  );
-}
-
-function SimulatorRoundForm({initial, courses, currentHcp, onSave, onCancel}) {
-  const [r, setR] = useState(initial);
-  const set = (k,v) => setR(prev=>({...prev,[k]:v}));
-  const cr=parseFloat(r.courseRating), sr=parseFloat(r.slopeRating);
-  const par=parseInt(r.par)||36, phcp=parseFloat(r.playingHcp)||0;
-  const selectedCourse = courses.find(x=>x.id===parseInt(r.courseId));
-  const phcpSuggestion = useMemo(()=>calcPlayingHcpFromCourse(currentHcp, {
-    courseRating:r.courseRating,
-    slopeRating:r.slopeRating,
-    par:r.par,
-    nineHolePhcpFactor:selectedCourse?.nineHolePhcpFactor,
-  }, r.holes), [currentHcp, r.courseRating, r.slopeRating, r.par, r.holes, selectedCourse?.nineHolePhcpFactor]);
-
-  const prefill = course => setR(prev=>({
-    ...prev,
-    courseId:course.id,
-    courseName:course.name,
-    courseRating:course.courseRating,
-    slopeRating:course.slopeRating,
-    par:course.par,
-    playingHcp:calcPlayingHcpFromCourse(currentHcp, course, prev.holes) ?? prev.playingHcp,
-  }));
-
-  const projectedGross = useMemo(()=>{
-    if (r.mode!=="Stableford") return parseInt(r.adjustedGross);
-    return calcAdjustedGrossFromStableford(r);
-  }, [r]);
-
-  const preview = useMemo(()=>{
-    if (!projectedGross) return null;
-    const simulation = buildProjectedHandicap({
-      recentDiffs:initial.recentDiffs || [],
-      currentHcp,
-      round:{
-        holes:r.holes,
-        mode:r.mode,
-        courseRating:r.courseRating,
-        slopeRating:r.slopeRating,
-        par:r.par,
-        playingHcp:r.playingHcp,
-        adjustedGross:projectedGross,
-      }
-    });
-    return simulation;
-  }, [initial.recentDiffs, currentHcp, r, projectedGross]);
-
-  const handleSave = () => {
-    if (!r.date) return alert("Datum erforderlich");
-    if (!r.courseName) return alert("Bitte Platzname angeben");
-    const final = {...r};
-    if (final.courseId) {
-      const c = courses.find(x=>x.id===parseInt(final.courseId));
-      if (c) {
-        final.courseName=c.name;
-        final.courseRating=c.courseRating;
-        final.slopeRating=c.slopeRating;
-        final.par=c.par;
-      }
-    }
-    if (final.mode==="Stableford" && projectedGross) final.adjustedGross = projectedGross;
-    onSave(final);
-  };
-
-  return (
-    <div>
-      {field("Datum", <input type="date" style={inp} value={r.date||""} onChange={e=>set("date",e.target.value)}/>)}
-      {field("Platz aus Datenbank", <select style={sel} value={r.courseId||""} onChange={e=>{const c=courses.find(x=>x.id===parseInt(e.target.value)); if (c) prefill(c);}}>
-        <option value="">– waehlen oder manuell –</option>
-        {courses.map(c=><option key={c.id} value={c.id}>{c.name} (CR {c.courseRating} / SR {c.slopeRating})</option>)}
-      </select>)}
-      {field("Platzname", <input style={inp} value={r.courseName||""} onChange={e=>set("courseName",e.target.value)} placeholder="z.B. Pulheim City"/>)}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-        {field("Course Rating", <input type="number" step="0.1" style={inp} value={r.courseRating||""} onChange={e=>set("courseRating",parseFloat(e.target.value))} placeholder="30.1"/>)}
-        {field("Slope Rating", <input type="number" style={inp} value={r.slopeRating||""} onChange={e=>set("slopeRating",parseInt(e.target.value))} placeholder="100"/>)}
-        {field("Par", <input type="number" style={inp} value={r.par||""} onChange={e=>set("par",parseInt(e.target.value))} placeholder="32"/>)}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-        {field("Loecher", <select style={sel} value={r.holes} onChange={e=>set("holes", parseInt(e.target.value))}>
-          <option value={9}>9 Loch</option>
-          <option value={18}>18 Loch</option>
-        </select>)}
-        {field("Wertung", <select style={sel} value={r.mode} onChange={e=>set("mode", e.target.value)}>
-          <option value="Stableford">Stableford</option>
-          <option value="Stroke Play">Zaehspiel</option>
-        </select>)}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8}}>
-        <div>{field("Playing HCP", <input type="number" step="0.1" style={inp} value={r.playingHcp||""} onChange={e=>set("playingHcp",parseFloat(e.target.value))} placeholder={currentHcp.toFixed(1)}/>, phcpSuggestion!==null ? `Vorschlag aus HCP ${currentHcp.toFixed(1)}: ${phcpSuggestion}` : r.holes===9 ? "absolute Schlaege fuer 9 Loch" : undefined)}</div>
-        <button type="button" onClick={()=>phcpSuggestion!==null && set("playingHcp", phcpSuggestion)} style={{height:40,alignSelf:"end",padding:"0 12px",borderRadius:"var(--border-radius-md)",border:"1px solid var(--color-border-secondary)",background:"rgba(255,255,255,0.92)",cursor:phcpSuggestion!==null?"pointer":"not-allowed",color:"var(--color-text-primary)",fontSize:12,fontWeight:600,opacity:phcpSuggestion!==null?1:0.5}}>
-          Auto
-        </button>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10,marginBottom:16}}>
-        {r.mode==="Stableford"
-          ? field(r.holes===9 ? "Stableford Punkte (9 Loch)" : "Stableford Punkte", <input type="number" style={inp} value={r.stablefordPoints||""} onChange={e=>set("stablefordPoints", parseInt(e.target.value))} placeholder={r.holes===9 ? "22" : "34"}/>)
-          : field("AGS / Netto-Brutto", <input type="number" style={inp} value={r.adjustedGross||""} onChange={e=>set("adjustedGross", parseInt(e.target.value))} placeholder={r.holes===9 ? "48" : "95"}/>)}
-        {field("Berechneter AGS", <input type="number" style={{...inp,background:"#f8f8f8"}} value={projectedGross ?? ""} readOnly/>, r.mode==="Stableford" ? "auto" : "manuell")}
-      </div>
-      {preview && (
-        <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:16,border:"1px solid rgba(197,107,26,0.26)",background:"linear-gradient(180deg, #fff9f2 0%, #fff1df 100%)"}}>
-          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"#9a5314",marginBottom:8}}>Vorschau</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
-            <div><div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Differential</div><div style={{fontSize:22,fontWeight:600}}>{preview.diff.toFixed(1)}</div></div>
-            <div><div style={{fontSize:12,color:"var(--color-text-secondary)"}}>HCP danach</div><div style={{fontSize:22,fontWeight:600,color:COLORS.hcp}}>{preview.nextHcp.toFixed(1)}</div></div>
-            <div><div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Zaehlt?</div><div style={{fontSize:16,fontWeight:600,color:preview.wouldCount ? "#085041" : "#9a5314"}}>{preview.wouldCount ? "Ja" : "Eher nicht"}</div></div>
-          </div>
-          <div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid rgba(154,83,20,0.24)"}}>
-            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"#9a5314",marginBottom:6}}>So verändert sich die Wertung</div>
-            {buildPreviewExplanation(preview).map((line,i)=>(
-              <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.5,marginBottom:4}}>
-                <span style={{color:"#9a5314",flexShrink:0}}>{i+1}.</span>
-                <span>{line}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div style={{display:"flex",gap:8}}>
-        <button onClick={handleSave} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:500,fontSize:14}}>Simulationsrunde hinzufügen</button>
-        <button onClick={onCancel} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:"0.5px solid var(--color-border-tertiary)",cursor:"pointer",fontSize:14,color:"var(--color-text-primary)"}}>Abbrechen</button>
-      </div>
-    </div>
-  );
-}
-
-function HcpSimulator({courses, rounds, startHcp, simulatedRounds, onAddRound, onDeleteRound, onClearRounds}) {
-  const [simForm, setSimForm] = useState(null);
-
-  const actualTimeline = useMemo(()=>buildHandicapTimeline(rounds, startHcp), [rounds, startHcp]);
-  const combinedRounds = useMemo(()=>[...rounds, ...simulatedRounds], [rounds, simulatedRounds]);
-  const combinedTimeline = useMemo(()=>buildHandicapTimeline(combinedRounds, startHcp), [combinedRounds, startHcp]);
-  const combinedSortedRounds = useMemo(()=>[...combinedRounds].sort((a,b)=>b.date.localeCompare(a.date) || (b.createdAt||"").localeCompare(a.createdAt||"") || (b.id||0)-(a.id||0)), [combinedRounds]);
-  const combinedHcpRounds = useMemo(()=>combinedSortedRounds.filter(isHcpEligible), [combinedSortedRounds]);
-  const recentTimeline = useMemo(()=>combinedTimeline.slice(-20), [combinedTimeline]);
-  const recentDiffs = useMemo(()=>recentTimeline.map(entry=>entry.diff), [recentTimeline]);
-  const scenarioHcp = useMemo(()=>combinedTimeline.length ? combinedTimeline[combinedTimeline.length-1].hcpAfter : (startHcp ?? 54), [combinedTimeline, startHcp]);
-  const diffByRoundId = useMemo(()=>new Map(combinedTimeline.map(entry=>[entry.round.id, entry.diff])), [combinedTimeline]);
-  const simulatedRoundIds = useMemo(()=>new Set(simulatedRounds.map(round=>round.id)), [simulatedRounds]);
-  const projectedStartIndex = actualTimeline.length;
-
-  const openDialog = () => {
-    const nextDate = getNextDate(getLatestRoundDate(combinedRounds));
-    setSimForm({
-      id:null,
-      date:nextDate,
-      mode:"Stableford",
-      format:"Einzel",
-      holes:9,
-      submitted:true,
-      markerSigned:true,
-      nineHoleAllowed:true,
-      playingHcp:scenarioHcp,
-      courseId:"",
-      courseName:"",
-      courseRating:"",
-      slopeRating:"",
-      par:32,
-      stablefordPoints:"",
-      adjustedGross:"",
-      recentDiffs,
-    });
-  };
-
-  const saveScenarioRound = round => {
-    onAddRound({
-      ...round,
-      simulated:true,
-      createdAt:new Date().toISOString(),
-      submitted:true,
-      markerSigned:true,
-      format:"Einzel",
-      nineHoleAllowed:parseInt(round.holes)===9 ? true : false,
-    });
-    setSimForm(null);
-  };
-
-  const scenarioDelta = round1(scenarioHcp - (actualTimeline.length ? actualTimeline[actualTimeline.length-1].hcpAfter : (startHcp ?? 54)));
-
-  return (
-    <div>
-      <div style={{...cardStyle,padding:"20px 24px",marginBottom:20,position:"relative",overflow:"hidden",background:"linear-gradient(145deg, rgba(255,248,239,0.98) 0%, rgba(255,241,223,0.98) 100%)",border:"1px solid rgba(197,107,26,0.24)"}}>
-        <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at top right, rgba(197,107,26,0.12), transparent 30%)",pointerEvents:"none"}}/>
-        <div style={{position:"relative",display:"flex",justifyContent:"space-between",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
-          <div>
-            <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#9a5314",marginBottom:6}}>Scenario Lab</div>
-            <div style={{fontSize:24,fontWeight:600,color:"#2f2011",marginBottom:6}}>Mehrere Runden hintereinander simulieren</div>
-            <div style={{fontSize:13,color:"#6f5841",maxWidth:520,lineHeight:1.6}}>
-              Fuege einzelne Zukunftsrunden nacheinander hinzu. Die Statistiken, Tabellen und Charts laufen danach direkt weiter und zeigen die simulierten Runden in Orange.
-            </div>
-          </div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <button onClick={openDialog} style={{padding:"9px 16px",borderRadius:"var(--border-radius-md)",background:"#C56B1A",color:"#fff",border:"none",cursor:"pointer",fontWeight:600,fontSize:14}}>+ Runde simulieren</button>
-            <button onClick={onClearRounds} style={{padding:"9px 16px",borderRadius:"var(--border-radius-md)",background:"transparent",border:"1px solid rgba(197,107,26,0.28)",color:"#9a5314",cursor:simulatedRounds.length?"pointer":"not-allowed",opacity:simulatedRounds.length?1:0.5,fontSize:14}}>Szenario leeren</button>
-          </div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginTop:18}}>
-          <div style={{...subtleCardStyle,padding:"12px 14px",background:"rgba(255,255,255,0.72)"}}><div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:4}}>Simulierte Runden</div><div style={{fontSize:24,fontWeight:600,color:"#2f2011"}}>{simulatedRounds.length}</div></div>
-          <div style={{...subtleCardStyle,padding:"12px 14px",background:"rgba(255,255,255,0.72)"}}><div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:4}}>HCP im Szenario</div><div style={{fontSize:24,fontWeight:600,color:COLORS.hcp}}>{scenarioHcp.toFixed(1)}</div></div>
-          <div style={{...subtleCardStyle,padding:"12px 14px",background:"rgba(255,255,255,0.72)"}}><div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:4}}>Aenderung</div><div style={{fontSize:24,fontWeight:600,color:scenarioDelta<0 ? COLORS.hcp : "#2f2011"}}>{`${scenarioDelta > 0 ? "+" : ""}${scenarioDelta.toFixed(1)}`}</div></div>
-        </div>
-      </div>
-
-      <Dashboard
-        rounds={combinedSortedRounds}
-        hcpRounds={combinedHcpRounds}
-        recentDiffs={recentDiffs}
-        estimatedHcp={scenarioHcp}
-        onNew={openDialog}
-        hcpTimeline={combinedTimeline}
-        diffByRoundId={diffByRoundId}
-        projectedStartIndex={simulatedRounds.length ? projectedStartIndex : null}
-        simulatedRoundIds={simulatedRoundIds}
-        title="Szenario-Dashboard"
-        recentTitle="Letzte echte und simulierte Runden"
-        actionArea={simulatedRounds.length ? (
-          <div style={{marginBottom:20}}>
-            <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>Simulierte Runden bearbeiten</div>
-            {simulatedRounds.map(round=><RoundRow key={round.id} round={round} onDelete={()=>onDeleteRound(round.id)} diffByRoundId={diffByRoundId}/>)}
-          </div>
-        ) : null}
-        emptyText="Lege die erste Simulationsrunde an, dann laeuft das Dashboard direkt in die Zukunft weiter."
-      />
-
-      {simForm && <Modal title="Simulationsrunde hinzufuegen" onClose={()=>setSimForm(null)}><SimulatorRoundForm initial={simForm} courses={courses} currentHcp={scenarioHcp} onSave={saveScenarioRound} onCancel={()=>setSimForm(null)}/></Modal>}
     </div>
   );
 }
@@ -3482,7 +3329,7 @@ function Impressum() {
 
 function Datenschutz() {
   const storageItems = [
-    ["golf_hcp_db", "Profil (Anzeigename, Start-HCP), angelegte Plätze (Name, Course Rating, Slope, Par, Tee, Notizen), gespeicherte Runden (Datum, Platz, Brutto- bzw. Stableford-Ergebnis, Spielvorgabe, Kennzeichen wie „eingereicht“ und „Marker unterschrieben“) sowie Runden im Simulator."],
+    ["golf_hcp_db", "Profil (Anzeigename, Start-HCP), angelegte Plätze (Name, Course Rating, Slope, Par, Tee, Notizen), gespeicherte Runden (Datum, Platz, Brutto- bzw. Stableford-Ergebnis, Spielvorgabe, Kennzeichen wie „eingereicht“, „Marker unterschrieben“ und „Simulation“)."],
     ["golf_hcp_nav_collapsed", "Anzeige-Einstellung, ob die Seitennavigation eingeklappt ist."],
     ["golf_hcp_usage", "Zufällige Installations-ID für den anonymen Nutzungszähler, der Tag des letzten gesendeten Pings und dein Ein-/Aus-Schalter dazu (Abschnitt 4). Der einzige Schlüssel, dessen Inhalt das Gerät verlässt – und nur die ID."],
   ];
@@ -3627,7 +3474,7 @@ function AppFooter({onOpenLegal}) {
         <div>
           <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Wolf Golf Club</div>
           <div style={{fontSize:13,color:"var(--color-text-secondary)",lineHeight:1.6}}>
-            Lokaler Golf-Handicap-Tracker fuer Runden, Simulator und golf.de PDF-Import direkt im Browser.
+            Lokaler Golf-Handicap-Tracker fuer Runden, Was-waere-wenn-Simulationen und golf.de PDF-Import direkt im Browser.
           </div>
         </div>
         <div>
@@ -4053,7 +3900,6 @@ const DESKTOP_QUERY = "(min-width: 1024px)";
 const NAV_ITEMS = [
   { id:"dashboard", label:"Dashboard", icon:["M4 13h6V4H4v9Z","M14 20h6v-9h-6v9Z","M4 20h6v-4H4v4Z","M14 8h6V4h-6v4Z"] },
   { id:"games", label:"Games", icon:["M7.5 4h9v4.5a4.5 4.5 0 01-9 0V4Z","M7.5 5.5H4.5v1A3.5 3.5 0 008 10","M16.5 5.5h3v1A3.5 3.5 0 0116 10","M12 13v3.5","M8.5 20h7"] },
-  { id:"simulator", label:"Simulator", icon:["M4 17l5-5 3 3 7-7","M15 8h5v5"] },
   { id:"rounds", label:"Runden", icon:["M8 6h12","M8 12h12","M8 18h12","M4 6h.01","M4 12h.01","M4 18h.01"] },
   { id:"courses", label:"Plätze", icon:["M7 20V4","M7 5.2l9 2.6-9 2.6","M4.5 20h6"] },
   { id:"profile", label:"Profil", icon:["M12 11a4 4 0 100-8 4 4 0 000 8Z","M4.5 21a7.5 7.5 0 0115 0"] },
@@ -4124,7 +3970,7 @@ function BrandMark({size=34}) {
   );
 }
 
-function SideNav({view, onSelect, isDesktop, collapsed, onToggleCollapsed, open, onClose, profileName, displayHcp}) {
+function SideNav({view, onSelect, isDesktop, collapsed, onToggleCollapsed, open, onClose, profileName, displayHcp, simulated=false}) {
   const [hovered, setHovered] = useState(null);
   const showLabels = !isDesktop || !collapsed;
   const panelWidth = isDesktop ? (collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH) : "min(86vw, 268px)";
@@ -4197,8 +4043,8 @@ function SideNav({view, onSelect, isDesktop, collapsed, onToggleCollapsed, open,
 
       <div style={{marginTop:"auto",paddingTop:16}}>
         <div style={{borderTop:"1px solid rgba(255,255,255,0.12)",paddingTop:14,textAlign:showLabels?"left":"center"}}>
-          {showLabels && <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:"rgba(255,255,255,0.55)",marginBottom:4}}>HCP Index</div>}
-          <div style={{fontSize:showLabels?24:15,fontWeight:700,lineHeight:1.1}}>{displayHcp}</div>
+          {showLabels && <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:"rgba(255,255,255,0.55)",marginBottom:4}}>{simulated?"HCP Index · Szenario":"HCP Index"}</div>}
+          <div style={{fontSize:showLabels?24:15,fontWeight:700,lineHeight:1.1,color:simulated?"#F5AC63":"#fff"}}>{displayHcp}</div>
         </div>
       </div>
     </nav>
@@ -4222,7 +4068,7 @@ function SideNav({view, onSelect, isDesktop, collapsed, onToggleCollapsed, open,
   );
 }
 
-function MobileTopBar({title, displayHcp, onOpenNav, maxWidth}) {
+function MobileTopBar({title, displayHcp, onOpenNav, maxWidth, simulated=false}) {
   return (
     <header style={{
       position:"sticky",top:0,zIndex:70,
@@ -4240,8 +4086,8 @@ function MobileTopBar({title, displayHcp, onOpenNav, maxWidth}) {
           <div style={{fontSize:15,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
         </div>
         <div style={{textAlign:"right",flexShrink:0}}>
-          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"var(--color-text-secondary)"}}>HCP</div>
-          <div style={{fontSize:18,fontWeight:700,color:COLORS.hcp,lineHeight:1.1}}>{displayHcp}</div>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"var(--color-text-secondary)"}}>{simulated?"HCP · Szenario":"HCP"}</div>
+          <div style={{fontSize:18,fontWeight:700,color:simulated?"#C56B1A":COLORS.hcp,lineHeight:1.1}}>{displayHcp}</div>
         </div>
       </div>
     </header>
@@ -4438,15 +4284,9 @@ export default function App() {
     });
     setCourseForm(null);
   };
-  const saveSimulatedRound = r => updateDB(db=>{
-    if (r.id) db.simulatedRounds=db.simulatedRounds.map(x=>x.id===r.id?r:x);
-    else { db.simulatedRounds=[...db.simulatedRounds,{...r,id:db.nextRoundId}]; db.nextRoundId=db.nextRoundId+1; }
-    return db;
-  });
   const saveProfile = p => updateDB(db=>{ db.profile=p; return db; });
   const deleteRound = id => { updateDB(db=>{ db.rounds=db.rounds.filter(r=>r.id!==id); return db; }); setDeleteConfirm(null); };
-  const deleteSimulatedRound = id => updateDB(db=>{ db.simulatedRounds=db.simulatedRounds.filter(r=>r.id!==id); return db; });
-  const clearSimulatedRounds = () => updateDB(db=>{ db.simulatedRounds=[]; return db; });
+  const clearSimulations = () => updateDB(db=>{ db.rounds=db.rounds.filter(r=>!r.simulated); return db; });
 
   // --- Games ---
   const addPlayer = player => {
@@ -4512,6 +4352,22 @@ export default function App() {
   const recentTimeline = useMemo(()=>hcpTimeline.slice(-20),[hcpTimeline]);
   const recentDiffs = useMemo(()=>recentTimeline.map(entry=>entry.diff),[recentTimeline]);
   const estimatedHcp = useMemo(()=>hcpTimeline.length ? hcpTimeline[hcpTimeline.length-1].hcpAfter : null,[hcpTimeline]);
+
+  // Als Simulation markierte Runden laufen im Dashboard mit. Daneben steht
+  // immer der echte Index, damit klar bleibt, was Wunsch und was Wirklichkeit
+  // ist – und ab welcher Runde die Charts gestrichelt weiterlaufen.
+  const simulatedRoundIds = useMemo(()=>new Set(db.rounds.filter(r=>r.simulated).map(r=>r.id)),[db.rounds]);
+  const realTimeline = useMemo(()=>simulatedRoundIds.size
+    ? buildHandicapTimeline(db.rounds.filter(r=>!r.simulated), db.profile.startHcp ?? 54)
+    : hcpTimeline,[simulatedRoundIds, db.rounds, db.profile.startHcp, hcpTimeline]);
+  const realHcp = useMemo(()=>realTimeline.length ? realTimeline[realTimeline.length-1].hcpAfter : null,[realTimeline]);
+  const projectedStartIndex = useMemo(()=>{
+    if (!simulatedRoundIds.size) return null;
+    const index = hcpTimeline.findIndex(entry=>simulatedRoundIds.has(entry.round.id));
+    return index<0 ? null : index;
+  },[hcpTimeline, simulatedRoundIds]);
+  const nextSimulationDate = useMemo(()=>getNextDate(getLatestRoundDate(db.rounds)),[db.rounds]);
+
   const countingIds = useMemo(()=>{
     const roundCount = recentTimeline.length;
     const take = roundCount > 0 ? getHandicapRule(roundCount).take : 0;
@@ -4532,24 +4388,29 @@ export default function App() {
       .slice(0,take);
   },[recentTimeline, hcpRule]);
   const displayHcp = estimatedHcp??db.profile.startHcp??54;
+  const realDisplayHcp = realHcp??db.profile.startHcp??54;
+  // Number(): ein importiertes Profil kann den Start-HCP als String mitbringen.
+  const realHcpLabel = Number(realDisplayHcp).toFixed(1);
 
   // Der Profilinhaber ist in Games ein Spieler wie jeder andere – nur dass sein
   // Handicap-Index aus dem Tracker kommt statt von Hand gepflegt zu werden.
+  // Dort zaehlt der echte Index: an einem Flight-Spiel haengt eine Abrechnung,
+  // die keine Simulation mitrechnen darf.
   useEffect(()=>{
     if (!db.profile.name) return;
     const me = db.players.find(p=>p.isMe);
-    if (me && me.name===db.profile.name && me.hcpIndex===round1(displayHcp)) return;
+    if (me && me.name===db.profile.name && me.hcpIndex===round1(realDisplayHcp)) return;
     updateDB(db=>{
       const players=[...db.players];
       const index=players.findIndex(p=>p.isMe);
-      if (index>=0) players[index]={...players[index], name:db.profile.name, hcpIndex:round1(displayHcp)};
-      else { players.push({id:db.nextPlayerId, name:db.profile.name, hcpIndex:round1(displayHcp), isMe:true}); db.nextPlayerId+=1; }
+      if (index>=0) players[index]={...players[index], name:db.profile.name, hcpIndex:round1(realDisplayHcp)};
+      else { players.push({id:db.nextPlayerId, name:db.profile.name, hcpIndex:round1(realDisplayHcp), isMe:true}); db.nextPlayerId+=1; }
       db.players=players;
       return db;
     });
-  },[db.profile.name, db.players, displayHcp]);
+  },[db.profile.name, db.players, realDisplayHcp]);
 
-  const newRound = () => setForm({ date:new Date().toISOString().slice(0,10), mode:"Stableford", format:"Einzel", holes:18, submitted:false, markerSigned:false, nineHoleAllowed:false, playingHcp:displayHcp });
+  const newRound = () => setForm({ date:new Date().toISOString().slice(0,10), mode:"Stableford", format:"Einzel", holes:18, submitted:false, markerSigned:false, nineHoleAllowed:false, simulated:false, playingHcp:displayHcp });
 
   const cardPrompt = pendingCard && (
     <Modal title={pendingCard.kind==="player" ? "Mitspieler übernehmen?" : pendingCard.kind==="game" ? "Spiel mitspielen?" : "Platz übernehmen?"} onClose={dismissCard}>
@@ -4594,9 +4455,10 @@ export default function App() {
         onClose={()=>setNavOpen(false)}
         profileName={db.profile.name}
         displayHcp={displayHcp}
+        simulated={simulatedRoundIds.size>0}
       />
       <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
-        {!isDesktop && <MobileTopBar title={activeNavItem?.label ?? LEGAL_VIEW_LABELS[view] ?? "Dashboard"} displayHcp={displayHcp} onOpenNav={()=>setNavOpen(true)} maxWidth={contentMaxWidth}/>}
+        {!isDesktop && <MobileTopBar title={activeNavItem?.label ?? LEGAL_VIEW_LABELS[view] ?? "Dashboard"} displayHcp={displayHcp} simulated={simulatedRoundIds.size>0} onOpenNav={()=>setNavOpen(true)} maxWidth={contentMaxWidth}/>}
         <div style={{maxWidth:contentMaxWidth,margin:"0 auto",padding:contentShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
           <div style={{...cardStyle,display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:18,gap:16,flexWrap:"wrap",padding:isDesktop?"22px 24px":"18px 20px",background:"linear-gradient(140deg, rgba(20,46,37,0.96) 0%, rgba(18,57,44,0.94) 45%, rgba(29,158,117,0.76) 100%)",color:"#fff",position:"relative",overflow:"hidden"}}>
             <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at top right, rgba(255,255,255,0.16), transparent 28%), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)",backgroundSize:"auto, 24px 24px",opacity:0.4,pointerEvents:"none"}}/>
@@ -4620,22 +4482,50 @@ export default function App() {
                   countingDiffs={countingDiffs}
                 >
                 <div style={{display:"inline-flex",alignItems:"center",justifyContent:"flex-end",gap:6,marginBottom:4}}>
-                  <span style={{fontSize:11,color:"rgba(255,255,255,0.68)"}}>{estimatedHcp?"Aktueller HCP Index":"Start-HCP"}</span>
+                  <span style={{fontSize:11,color:"rgba(255,255,255,0.68)"}}>{estimatedHcp?(simulatedRoundIds.size?"HCP Index im Szenario":"Aktueller HCP Index"):"Start-HCP"}</span>
                   <span style={{width:18,height:18,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.22)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:11,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>?</span>
                 </div>
                 <div style={{fontSize:44,fontWeight:700,color:"#fff",lineHeight:1}}>{displayHcp}</div>
                 <div style={{fontSize:11,color:"rgba(255,255,255,0.68)",marginTop:6}}>{estimatedHcp?`aus ${Math.min(hcpRounds.length,20)} HCP-wirks. Runden`:"noch keine gewerteten Runden"}</div>
+                {simulatedRoundIds.size>0 && (
+                  <div style={{marginTop:8,display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:999,background:"rgba(197,107,26,0.32)",border:"1px solid rgba(255,208,158,0.45)",fontSize:11,color:"#ffe7cf"}}>
+                    <span style={{width:7,height:7,borderRadius:"50%",background:"#F5AC63",flexShrink:0}}/>
+                    {simulatedRoundIds.size===1 ? "1 Simulationsrunde" : `${simulatedRoundIds.size} Simulationsrunden`} · echt: {realHcpLabel}
+                  </div>
+                )}
               </HcpTooltip>
             </div>
           </div>
 
-          {view==="dashboard" && <Dashboard rounds={sortedRounds} hcpRounds={hcpRounds} recentDiffs={recentDiffs} estimatedHcp={estimatedHcp} onNew={()=>{newRound();setView("rounds");}} hcpTimeline={hcpTimeline} diffByRoundId={diffByRoundId} variant="focus"/>}
+          {view==="dashboard" && <Dashboard
+            rounds={sortedRounds}
+            hcpRounds={hcpRounds}
+            recentDiffs={recentDiffs}
+            estimatedHcp={estimatedHcp}
+            onNew={()=>{newRound();setView("rounds");}}
+            hcpTimeline={hcpTimeline}
+            diffByRoundId={diffByRoundId}
+            projectedStartIndex={projectedStartIndex}
+            simulatedRoundIds={simulatedRoundIds}
+            actionArea={simulatedRoundIds.size>0 ? (
+              <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:24,border:"1px solid rgba(197,107,26,0.26)",background:"linear-gradient(180deg, #fff9f2 0%, #fff1df 100%)",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"#9a5314",marginBottom:6}}>Was wäre wenn</div>
+                  <div style={{fontSize:13,color:"#6f5841",lineHeight:1.6,maxWidth:520}}>
+                    Dashboard, Charts und Wertungsfenster laufen mit {simulatedRoundIds.size===1 ? "einer Simulationsrunde" : `${simulatedRoundIds.size} Simulationsrunden`} weiter (orange markiert und gestrichelt). Dein echter Index liegt bei {realHcpLabel}.
+                  </div>
+                </div>
+                <button onClick={clearSimulations} style={{padding:"8px 14px",borderRadius:"var(--border-radius-md)",background:"transparent",border:"1px solid rgba(197,107,26,0.32)",color:"#9a5314",cursor:"pointer",fontSize:13,fontWeight:600,flexShrink:0}}>Simulationen verwerfen</button>
+              </div>
+            ) : null}
+            variant="focus"
+          />}
           {view==="games" && <GamesView
             games={[...db.games].sort((a,b)=>String(b.date).localeCompare(String(a.date)) || b.id-a.id)}
             courses={db.courses}
             players={db.players}
             profile={db.profile}
-            displayHcp={displayHcp}
+            displayHcp={realDisplayHcp}
             onStartGame={startGame}
             onAddPlayer={addPlayer}
             onScore={setGameScore}
@@ -4647,7 +4537,6 @@ export default function App() {
             onDeleteGame={deleteGame}
             onCreateHcpRound={createHcpRoundFromGame}
           />}
-          {view==="simulator" && <HcpSimulator courses={db.courses} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} simulatedRounds={db.simulatedRounds} onAddRound={saveSimulatedRound} onDeleteRound={deleteSimulatedRound} onClearRounds={clearSimulatedRounds}/>}
           {view==="rounds" && <RoundList rounds={sortedRounds} courses={db.courses} onNew={newRound} onEdit={r=>setForm({...r})} onDelete={id=>setDeleteConfirm(id)} countingIds={countingIds} diffByRoundId={diffByRoundId}/>}
           {view==="courses" && <CourseList courses={db.courses} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:"",nineHolePhcpFactor:0.5})} onEdit={c=>setCourseForm({...c})}/>}
           {view==="profile" && <>
@@ -4683,7 +4572,7 @@ export default function App() {
           <UpdateAppPrompt/>
           <InstallAppPrompt/>
 
-          {form && <Modal title={form.id?"Runde bearbeiten":"Neue Runde"} onClose={()=>setForm(null)}><RoundForm initial={form} courses={db.courses} currentHcp={displayHcp} onSave={saveRound} onCancel={()=>setForm(null)}/></Modal>}
+          {form && <Modal title={form.id?(form.simulated?"Simulation bearbeiten":"Runde bearbeiten"):"Neue Runde"} onClose={()=>setForm(null)}><RoundForm initial={form} courses={db.courses} currentHcp={displayHcp} recentDiffs={recentDiffs} nextSimulationDate={nextSimulationDate} onSave={saveRound} onCancel={()=>setForm(null)}/></Modal>}
           {courseForm && <Modal title={courseForm.id?"Platz bearbeiten":"Neuer Platz"} onClose={()=>setCourseForm(null)}><CourseForm initial={courseForm} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} onSave={saveCourse} onCancel={()=>setCourseForm(null)}/></Modal>}
           {deleteConfirm && <Modal title="Runde löschen?" onClose={()=>setDeleteConfirm(null)}>
             <p style={{color:COLORS.textSec,fontSize:14}}>Diese Runde wird unwiderruflich gelöscht.</p>
