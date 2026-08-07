@@ -81,8 +81,8 @@ def build(mark: str, radius: float, content_scale: float = 1.0) -> str:
     if content_scale != 1.0:
         mark = (f'  <g transform="translate(32 32) scale({content_scale}) translate(-32 -32)">\n'
                 f"{mark}\n  </g>")
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Wolf Golf">
-  <title>Wolf Golf</title>
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="The Wolf Golf Club">
+  <title>The Wolf Golf Club</title>
   <defs>
     <linearGradient id="wolfGolfBg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="{GREEN_LIGHT}"/>

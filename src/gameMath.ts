@@ -4,6 +4,9 @@
 // über Loch-Daten, Vorgaben und Bruttoschlägen, damit die Spielformate ohne UI
 // getestet werden können (siehe gameMath.test.ts).
 
+/** Beschriftung in beiden Sprachen; die Anzeige waehlt eine aus. */
+export type LangText = { de: string; en: string };
+
 export type HoleInfo = {
   nr: number; // Lochnummer, 1-basiert
   par: number;
@@ -249,10 +252,10 @@ export type MatchplayResult = {
   decidedAtHole: number | null;
   winner: "a" | "b" | null;
   complete: boolean;
-  /** Laufender Stand, z.B. "2 auf" oder "A/S". */
-  statusLabel: string;
+  /** Laufender Stand, z.B. "2 auf" oder "A/S" – zweisprachig. */
+  statusLabel: LangText;
   /** Endergebnis, z.B. "3 & 2" – null solange das Match offen ist. */
-  resultLabel: string | null;
+  resultLabel: LangText | null;
 };
 
 /**
@@ -312,15 +315,19 @@ export function scoreMatchplay(
   const winner = complete && status !== 0 ? (status > 0 ? "a" : "b") : null;
 
   const lead = Math.abs(status);
-  const statusLabel = status === 0 ? "A/S" : `${lead} auf`;
+  const statusLabel: LangText = status === 0
+    ? { de: "A/S", en: "A/S" }
+    : { de: `${lead} auf`, en: `${lead} up` };
 
-  let resultLabel: string | null = null;
+  let resultLabel: LangText | null = null;
   if (complete) {
     if (status === 0) {
-      resultLabel = "Geteilt (A/S)";
+      resultLabel = { de: "Geteilt (A/S)", en: "Halved (A/S)" };
     } else {
       const holesLeft = to - ((decidedAtHole ?? to - 1) + 1);
-      resultLabel = holesLeft > 0 ? `${lead} & ${holesLeft}` : `${lead} auf`;
+      resultLabel = holesLeft > 0
+        ? { de: `${lead} & ${holesLeft}`, en: `${lead} & ${holesLeft}` }
+        : { de: `${lead} auf`, en: `${lead} up` };
     }
   }
 
@@ -419,7 +426,7 @@ export type NassauPress = {
 
 export type NassauBet = {
   key: string;
-  label: string;
+  label: LangText;
   from: number;
   to: number;
   press: boolean;
@@ -433,12 +440,12 @@ export type NassauResult = {
 };
 
 /** Grundsegmente einer Nassau-Runde. Unter 18 Löchern gibt es nur eine Wette. */
-export function nassauSegments(holeCount: number): { key: NassauPress["segment"]; label: string; from: number; to: number }[] {
-  if (holeCount < 18) return [{ key: "total", label: "Gesamt", from: 0, to: holeCount }];
+export function nassauSegments(holeCount: number): { key: NassauPress["segment"]; label: LangText; from: number; to: number }[] {
+  if (holeCount < 18) return [{ key: "total", label: { de: "Gesamt", en: "Total" }, from: 0, to: holeCount }];
   return [
-    { key: "front", label: "Front 9", from: 0, to: 9 },
-    { key: "back", label: "Back 9", from: 9, to: 18 },
-    { key: "total", label: "Gesamt", from: 0, to: 18 },
+    { key: "front", label: { de: "Front 9", en: "Front 9" }, from: 0, to: 9 },
+    { key: "back", label: { de: "Back 9", en: "Back 9" }, from: 9, to: 18 },
+    { key: "total", label: { de: "Gesamt", en: "Total" }, from: 0, to: 18 },
   ];
 }
 
@@ -472,7 +479,7 @@ export function scoreNassau(
     if (from >= segment.to) continue;
     bets.push({
       key: `${press.segment}-press-${from}`,
-      label: `${segment.label} Press ab Loch ${from + 1}`,
+      label: { de: `${segment.label.de} Press ab Loch ${from + 1}`, en: `${segment.label.en} press from hole ${from + 1}` },
       from,
       to: segment.to,
       press: true,
@@ -620,10 +627,10 @@ export type BbbAwards = {
   bongo?: string | null;
 };
 
-export const BBB_AWARDS: { key: keyof BbbAwards; label: string; hint: string }[] = [
-  { key: "bingo", label: "Bingo", hint: "zuerst auf dem Grün" },
-  { key: "bango", label: "Bango", hint: "am nächsten zur Fahne" },
-  { key: "bongo", label: "Bongo", hint: "zuerst eingelocht" },
+export const BBB_AWARDS: { key: keyof BbbAwards; label: string; hint: LangText }[] = [
+  { key: "bingo", label: "Bingo", hint: { de: "zuerst auf dem Grün", en: "first on the green" } },
+  { key: "bango", label: "Bango", hint: { de: "am nächsten zur Fahne", en: "closest to the pin" } },
+  { key: "bongo", label: "Bongo", hint: { de: "zuerst eingelocht", en: "first in the hole" } },
 ];
 
 export type BbbResult = {
