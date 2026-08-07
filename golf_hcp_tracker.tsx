@@ -142,7 +142,6 @@ function normalizeGame(game) {
       percent: Number.isFinite(parseFloat(game?.handicap?.percent)) ? parseFloat(game.handicap.percent) : DEFAULT_HANDICAP_CONFIG.percent,
     },
     stake: {
-      unit: game?.stake?.unit === "eur" ? "eur" : "points",
       skin: parseFloat(game?.stake?.skin) || 1,
       match: parseFloat(game?.stake?.match) || 1,
       nassau: parseFloat(game?.stake?.nassau) || 1,
@@ -1979,16 +1978,17 @@ const HANDICAP_MODES = [
 const gamesPrimaryBtn: CSSProperties = {padding:"10px 18px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:600,fontSize:14};
 const gamesGhostBtn: CSSProperties = {padding:"10px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:"0.5px solid var(--color-border-tertiary)",cursor:"pointer",fontSize:14,color:"var(--color-text-primary)"};
 
-function formatStake(amount, unit) {
+// Die App zaehlt ausschliesslich Punkte. Was ein Punkt wert ist, vereinbart der
+// Flight unter sich – so kommen keine Geldbetraege in die App.
+function formatStake(amount) {
   const value = Math.round((amount || 0) * 100) / 100;
-  if (unit === "eur") return `${value.toFixed(2).replace(".", ",")} €`;
-  return `${value} Pkt`;
+  return `${String(value).replace(".", ",")} Pkt`;
 }
 
-function formatSignedStake(amount, unit) {
+function formatSignedStake(amount) {
   const value = Math.round((amount || 0) * 100) / 100;
-  if (value === 0) return formatStake(0, unit);
-  return `${value > 0 ? "+" : "−"}${formatStake(Math.abs(value), unit)}`;
+  if (value === 0) return formatStake(0);
+  return `${value > 0 ? "+" : "−"}${formatStake(Math.abs(value))}`;
 }
 
 /** Course Handicap eines Spielers für dieses Spiel (inkl. 9-Loch-Faktor). */
@@ -1998,7 +1998,8 @@ function gameCourseHandicap(hcpIndex, course, holeCount) {
 }
 
 /**
- * Verrechnet die Salden zu möglichst wenigen Zahlungen ("wer zahlt wem").
+ * Verrechnet die Salden zu möglichst wenigen Ausgleichen ("wer gibt wem").
+ * Die App kennt nur Punkte; was ein Punkt wert ist, klaeren die Spieler selbst.
  * Erwartet eine Liste, deren Beträge sich zu 0 aufheben.
  */
 function buildSettlement(balances) {
@@ -2127,7 +2128,6 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
   const [matchup, setMatchup] = useState([]);
   const [handicapMode, setHandicapMode] = useState<"difference"|"full"|"gross">(DEFAULT_HANDICAP_CONFIG.mode);
   const [handicapPercent, setHandicapPercent] = useState(DEFAULT_HANDICAP_CONFIG.percent);
-  const [stakeUnit, setStakeUnit] = useState("points");
   const [stakes, setStakes] = useState({skin:"1", match:"1", nassau:"1", point:"1"});
   const [newName, setNewName] = useState("");
   const [newHcp, setNewHcp] = useState("");
@@ -2201,7 +2201,6 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
       bbbAwards: Array.from({length:holeCount},()=>({bingo:null, bango:null, bongo:null})),
       nassauPresses: [],
       stake: {
-        unit: stakeUnit,
         skin: parseFloat(stakes.skin) || 1,
         match: parseFloat(stakes.match) || 1,
         nassau: parseFloat(stakes.nassau) || 1,
@@ -2308,16 +2307,16 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
         </div>
       )}
 
+      <div style={{fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.55,marginBottom:8}}>
+        <strong style={{color:"var(--color-text-primary)",fontWeight:600}}>Einsatz in Punkten.</strong>{" "}
+        Was ein Punkt wert ist, vereinbart der Flight unter sich – die App zählt nur Punkte und rechnet nichts in Geld um.
+      </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(110px, 1fr))",gap:10}}>
-        {field("Einsatz", <select style={sel} value={stakeUnit} onChange={e=>setStakeUnit(e.target.value)}>
-          <option value="points">Punkte</option>
-          <option value="eur">Euro</option>
-        </select>)}
         {[
           {key:"match", label:"je Matchplay", active:formats.includes("matchplay")},
           {key:"nassau", label:"je Nassau-Wette", active:formats.includes("nassau")},
           {key:"skin", label:"je Skin", active:formats.includes("skins")},
-          {key:"point", label:"je Punkt", active:formats.includes("wolf") || formats.includes("bbb")},
+          {key:"point", label:"je Spielpunkt", active:formats.includes("wolf") || formats.includes("bbb")},
         ].filter(entry=>entry.active).map(entry=>(
           <div key={entry.key}>{field(entry.label, <input type="number" step="0.5" min="0" style={inp}
             value={stakes[entry.key]} onChange={e=>setStakes(prev=>({...prev,[entry.key]:e.target.value}))}/>)}</div>
@@ -2652,7 +2651,6 @@ function GameScorecard({game, state}) {
 
 function GameResultView({game, state, meParticipant, onCreateHcpRound, onReopen, onExit}) {
   const {balanceList} = state;
-  const unit = game.stake.unit;
   const transfers = useMemo(()=>buildSettlement(balanceList), [balanceList]);
 
   // Für die HCP-Übernahme zählt immer das volle Course Handicap, nicht die
@@ -2680,18 +2678,18 @@ function GameResultView({game, state, meParticipant, onCreateHcpRound, onReopen,
           <div key={entry.id} style={{display:"flex",justifyContent:"space-between",fontSize:14,padding:"5px 0",borderBottom:"1px solid var(--color-border-tertiary)"}}>
             <span>{entry.name}</span>
             <strong style={{color:entry.amount > 0 ? COLORS.hcp : entry.amount < 0 ? "#E24B4A" : COLORS.textSec}}>
-              {formatSignedStake(entry.amount, unit)}
+              {formatSignedStake(entry.amount)}
             </strong>
           </div>
         ))}
         {transfers.length > 0 ? (
           <div style={{marginTop:12,fontSize:13,color:COLORS.textSec}}>
             {transfers.map((transfer, index)=>(
-              <div key={index}>{transfer.from} zahlt {transfer.to} <strong style={{color:"var(--color-text-primary)"}}>{formatStake(transfer.amount, unit)}</strong></div>
+              <div key={index}>{transfer.from} an {transfer.to}: <strong style={{color:"var(--color-text-primary)"}}>{formatStake(transfer.amount)}</strong></div>
             ))}
           </div>
         ) : (
-          <div style={{marginTop:12,fontSize:13,color:COLORS.textSec}}>Ausgeglichen – niemand schuldet jemandem etwas.</div>
+          <div style={{marginTop:12,fontSize:13,color:COLORS.textSec}}>Ausgeglichen – kein Punkt geht hin oder her.</div>
         )}
       </div>
 
