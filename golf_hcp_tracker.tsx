@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import qrcode from "qrcode-generator";
 
-import { buildShareUrl, describeShareCard, parseShareHash, type GameCard, type ShareCard } from "./src/shareCard";
+import { buildShareUrl, describeShareCard, parseShareHash, parseShareLink, type GameCard, type ShareCard } from "./src/shareCard";
+import { classifyCameraError, createDetector, drawFrame, isCameraSupported, startCamera, stopCamera, type CameraFailure } from "./src/qrScanner";
 import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline, parseHandicapIndex } from "./src/hcpMath";
 import { suggestHoles, normalizeHoles, totalPar, buildAllocations, scoreMatchplay, scoreSkins, scoreNassau, scoreWolf, scoreBingoBangoBongo, nassauSegments, BBB_AWARDS, stablefordFromHoles, playedHoleCount, DEFAULT_HANDICAP_CONFIG } from "./src/gameMath";
 import { fetchUsageStats, isUsagePingEnabled, setUsagePingEnabled, whenUsagePingSettled, USAGE_ID_RETENTION_DAYS, type UsageStats } from "./src/usagePing";
@@ -1700,6 +1701,113 @@ function ShareCardPanel({card, hint}) {
   );
 }
 
+
+const CAMERA_HINTS: Record<CameraFailure, string> = {
+  denied: "Die Kamera ist blockiert. Du kannst sie in den Browser-Einstellungen für diese Seite freigeben – oder den Link unten einfügen.",
+  notfound: "Keine Kamera gefunden. Nimm den Weg über den Link.",
+  unsupported: "Dieser Browser gibt die Kamera nicht frei. Nimm den Weg über den Link.",
+  error: "Die Kamera lässt sich gerade nicht öffnen. Nimm den Weg über den Link.",
+};
+
+/**
+ * Scannt eine geteilte Karte mit der Kamera. Der Weg ueber den eingefuegten Link
+ * steht immer daneben – nicht nur als Notnagel bei verweigerter Kamera, sondern
+ * auch fuer alle, die den Code lieber per Nachricht schicken.
+ */
+function QrScanDialog({title, hint, onDetect, onClose, accepts}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [failure, setFailure] = useState<CameraFailure | null>(isCameraSupported() ? null : "unsupported");
+  const [manual, setManual] = useState("");
+  const [problem, setProblem] = useState("");
+
+  const handleCard = card => {
+    if (!card) { setProblem("Darin steckt keine Karte von Wolf Golf."); return false; }
+    if (accepts && !accepts.includes(card.kind)) {
+      setProblem(card.kind === "game"
+        ? "Das ist eine Spielkarte – die öffnest du über den Link, sie legt ein eigenes Spiel an."
+        : "Diese Karte passt hier nicht.");
+      return false;
+    }
+    setProblem("");
+    onDetect(card);
+    return true;
+  };
+
+  useEffect(()=>{
+    if (failure) return;
+    let stream: MediaStream | null = null;
+    let timer = 0;
+    let stopped = false;
+
+    (async ()=>{
+      try {
+        stream = await startCamera();
+        if (stopped) { stopCamera(stream); return; }
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          video.setAttribute("playsinline", "true");
+          await video.play().catch(()=>undefined);
+        }
+        const detect = await createDetector();
+        const tick = async () => {
+          if (stopped) return;
+          const canvas = canvasRef.current;
+          if (video && canvas && drawFrame(video, canvas)) {
+            try {
+              const value = await detect(canvas);
+              if (value && handleCard(parseShareLink(value))) return;
+            } catch(e) { /* Einzelbild unlesbar: naechster Versuch. */ }
+          }
+          timer = window.setTimeout(tick, 250);
+        };
+        tick();
+      } catch(error) {
+        if (!stopped) setFailure(classifyCameraError(error));
+      }
+    })();
+
+    return ()=>{
+      stopped = true;
+      window.clearTimeout(timer);
+      stopCamera(stream);
+    };
+  },[failure]);
+
+  return (
+    <Modal title={title} onClose={onClose} maxWidth={520}>
+      <div style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)",marginBottom:12}}>{hint}</div>
+
+      {failure ? (
+        <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:14,background:"linear-gradient(180deg, rgba(255,247,233,0.98) 0%, rgba(255,251,243,0.96) 100%)",border:"1px solid rgba(190,120,20,0.28)",fontSize:13,lineHeight:1.6,color:"#6B4310"}}>
+          {CAMERA_HINTS[failure]}
+        </div>
+      ) : (
+        <div style={{position:"relative",borderRadius:"var(--border-radius-md)",overflow:"hidden",background:"#111",marginBottom:14,aspectRatio:"4 / 3"}}>
+          <video ref={videoRef} muted playsInline style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+          <div aria-hidden="true" style={{position:"absolute",inset:"12%",border:"3px solid rgba(255,255,255,0.85)",borderRadius:16,boxShadow:"0 0 0 9999px rgba(0,0,0,0.28)"}}/>
+        </div>
+      )}
+      <canvas ref={canvasRef} style={{display:"none"}}/>
+
+      <div style={{borderTop:"1px solid var(--color-border-tertiary)",paddingTop:14}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>Oder Link einfügen</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8}}>
+          <input
+            style={inp}
+            value={manual}
+            onChange={e=>{ setManual(e.target.value); setProblem(""); }}
+            placeholder="https://wolfgolf.club/#p=…"
+          />
+          <button type="button" onClick={()=>handleCard(parseShareLink(manual))} style={{...gamesGhostBtn,padding:"10px 14px"}}>Lesen</button>
+        </div>
+        {problem && <div style={{fontSize:13,color:"#E24B4A",marginTop:8}}>{problem}</div>}
+      </div>
+    </Modal>
+  );
+}
+
 function CourseList({courses, onNew, onEdit}) {
   const [shared, setShared] = useState(null);
   const sharedCard = useMemo(()=>{
@@ -2063,7 +2171,7 @@ function StrokeDots({strokes}) {
   return <span style={{fontSize:13,color:COLORS.hcp,letterSpacing:1,fontWeight:700}}>{"•".repeat(Math.min(strokes, 4))}</span>;
 }
 
-function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAddPlayer, onCancel}) {
+function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAddPlayer, onUpdatePlayer, onUpsertCourse, onCancel}) {
   const [date, setDate] = useState(()=>new Date().toISOString().slice(0,10));
   const [courseId, setCourseId] = useState(()=>courses[0]?.id ?? "");
   const [holeCount, setHoleCount] = useState(18);
@@ -2075,6 +2183,7 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
   const [stakes, setStakes] = useState({skin:"1", match:"1", nassau:"1", point:"1"});
   const [newName, setNewName] = useState("");
   const [newHcp, setNewHcp] = useState("");
+  const [scanning, setScanning] = useState(false);
 
   const course = courses.find(c=>c.id === parseInt(courseId));
   const holes = useMemo(
@@ -2160,6 +2269,19 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
     });
   };
 
+  const takeScannedCard = card => {
+    if (card.kind === "player") {
+      const existing = players.find(p=>!p.isMe && p.name.toLowerCase() === card.name.toLowerCase());
+      const id = existing ? existing.id : onAddPlayer({name: card.name, hcpIndex: card.hcpIndex});
+      if (existing && existing.hcpIndex !== card.hcpIndex) onUpdatePlayer(existing.id, {hcpIndex: card.hcpIndex});
+      setSelectedIds(prev=>prev.includes(id) ? prev : [...prev, id]);
+    } else if (card.kind === "course") {
+      const id = onUpsertCourse(card);
+      setCourseId(String(id));
+    }
+    setScanning(false);
+  };
+
   const addPlayer = () => {
     const name = newName.trim();
     if (!name) return;
@@ -2205,8 +2327,19 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
           <input style={inp} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Mitspieler hinzufügen"/>
           <input type="number" step="0.1" style={inp} value={newHcp} onChange={e=>setNewHcp(e.target.value)} placeholder="HCP"/>
           <button type="button" onClick={addPlayer} style={{...gamesGhostBtn,padding:"10px 14px"}}>+</button>
+          <button type="button" onClick={()=>setScanning(true)} style={{...gamesGhostBtn,padding:"10px 14px",gridColumn:"1 / -1"}}>Spielerkarte scannen</button>
         </div>
       </div>, "Mitspieler bleiben für die nächsten Spiele gespeichert")}
+
+      {scanning && (
+        <QrScanDialog
+          title="Karte scannen"
+          hint="Halte die Kamera auf die Spielerkarte deines Mitspielers – oder auf eine Platzkarte. Der Gescannte wird direkt für dieses Spiel ausgewählt, deine bisherigen Eingaben bleiben erhalten."
+          accepts={["player", "course"]}
+          onDetect={takeScannedCard}
+          onClose={()=>setScanning(false)}
+        />
+      )}
 
       {field("Spielformate", <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {GAME_FORMATS.map(format=>(
@@ -2785,7 +2918,7 @@ function GamePlayView({game, onScore, onChoice, onAward, onPress, onFinish, onRe
   return <GameHoleEntry game={game} state={state} onScore={onScore} onChoice={onChoice} onAward={onAward} onPress={onPress} onFinish={onFinish} onExit={onExit}/>;
 }
 
-function GamesView({games, courses, players, profile, displayHcp, onStartGame, onAddPlayer, onScore, onWolfChoice, onBbbAward, onNassauPress, onFinishGame, onReopenGame, onDeleteGame, onCreateHcpRound}) {
+function GamesView({games, courses, players, profile, displayHcp, onStartGame, onAddPlayer, onUpdatePlayer, onUpsertCourse, onScore, onWolfChoice, onBbbAward, onNassauPress, onFinishGame, onReopenGame, onDeleteGame, onCreateHcpRound}) {
   const [screen, setScreen] = useState<{mode:"list"|"setup"|"play"; gameId?:number}>({mode:"list"});
   const [sharedGame, setSharedGame] = useState(null);
   const openGame = games.find(g=>g.id === screen.gameId);
@@ -2828,6 +2961,8 @@ function GamesView({games, courses, players, profile, displayHcp, onStartGame, o
           displayHcp={displayHcp}
           onStart={draft=>setScreen({mode:"play", gameId:onStartGame(draft)})}
           onAddPlayer={onAddPlayer}
+          onUpdatePlayer={onUpdatePlayer}
+          onUpsertCourse={onUpsertCourse}
           onCancel={()=>setScreen({mode:"list"})}
         />
       </div>
@@ -4294,6 +4429,32 @@ export default function App() {
     updateDB(db=>{ db.players=[...db.players,{...player,id}]; db.nextPlayerId=id+1; return db; });
     return id;
   };
+  const updatePlayer = (id, patch) => updateDB(db=>{
+    db.players = db.players.map(player=>player.id === id ? {...player, ...patch} : player);
+    return db;
+  });
+
+  /** Legt einen gescannten Platz an oder aktualisiert ihn und gibt seine ID zurueck. */
+  const upsertCourse = card => {
+    const existing = db.courses.find(c=>c.name.toLowerCase() === card.name.toLowerCase());
+    const id = existing ? existing.id : db.nextCourseId;
+    updateDB(db=>{
+      const patch = {
+        name: card.name,
+        courseRating: card.courseRating,
+        slopeRating: card.slopeRating,
+        par: card.par,
+        tee: card.tee || "Gelb",
+        ...(card.holeCount ? {holeCount: card.holeCount} : {}),
+        ...(card.holeData ? {holeData: card.holeData} : {}),
+      };
+      if (existing) db.courses = db.courses.map(c=>c.id === id ? {...c, ...patch} : c);
+      else { db.courses = [...db.courses, {...patch, notes: "", nineHolePhcpFactor: 0.5, id}]; db.nextCourseId = id + 1; }
+      return db;
+    });
+    return id;
+  };
+
   const startGame = draft => {
     const id = db.nextGameId;
     updateDB(db=>{
@@ -4528,6 +4689,8 @@ export default function App() {
             displayHcp={realDisplayHcp}
             onStartGame={startGame}
             onAddPlayer={addPlayer}
+            onUpdatePlayer={updatePlayer}
+            onUpsertCourse={upsertCourse}
             onScore={setGameScore}
             onWolfChoice={setWolfChoice}
             onBbbAward={setBbbAward}

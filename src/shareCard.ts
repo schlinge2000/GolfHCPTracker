@@ -260,6 +260,19 @@ function parseGamePayload(payload: Record<string, unknown>): GameCard | null {
   };
 }
 
+/**
+ * Liest eine Karte aus gescanntem Text. Ein QR-Code liefert die komplette
+ * Adresse, manchmal mit fremdem Ursprung (Deploy-Preview, localhost) – gewertet
+ * wird ausschliesslich der Teil hinter dem Rautezeichen. Nimmt auch einen
+ * eingefuegten Link oder ein nacktes Fragment entgegen.
+ */
+export function parseShareLink(input: string): ShareCard | null {
+  const raw = String(input || "").trim();
+  if (!raw) return null;
+  const hashIndex = raw.indexOf("#");
+  return parseShareHash(hashIndex >= 0 ? raw.slice(hashIndex) : raw);
+}
+
 /** Kurzbeschreibung für den Übernehmen-Dialog. */
 export function describeShareCard(card: ShareCard) {
   if (card.kind === "player") {

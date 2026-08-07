@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildShareUrl, describeShareCard, parseShareHash, type CourseCard, type GameCard, type PlayerCard } from "./shareCard";
+import { buildShareUrl, describeShareCard, parseShareHash, parseShareLink, type CourseCard, type GameCard, type PlayerCard } from "./shareCard";
 
 const ORIGIN = "https://wolfgolf.club";
 
@@ -187,5 +187,32 @@ describe("Spielkarte", () => {
 
   it("beschreibt das Spiel für den Übernehmen-Dialog", () => {
     expect(describeShareCard(card)).toBe("GC Haus Kambach · 18 Loch · 2 Spieler · 2 Formate");
+  });
+});
+
+describe("parseShareLink – gescannter Text", () => {
+  const url = buildShareUrl({ kind: "player", name: "Ben", hcpIndex: 20.4 }, ORIGIN);
+
+  it("liest die Karte aus einer kompletten Adresse", () => {
+    expect(parseShareLink(url)).toMatchObject({ kind: "player", name: "Ben" });
+  });
+
+  it("akzeptiert auch ein nacktes Fragment", () => {
+    expect(parseShareLink(hashOf(url))).toMatchObject({ kind: "player", name: "Ben" });
+  });
+
+  it("ignoriert den Ursprung – ein Code vom Deploy-Preview funktioniert auch live", () => {
+    const fremd = url.replace(ORIGIN, "https://deploy-preview-21--golfhcptracker.netlify.app");
+    expect(parseShareLink(fremd)).toEqual(parseShareLink(url));
+  });
+
+  it("verträgt Leerzeichen rundherum", () => {
+    expect(parseShareLink(`  ${url}  `)).toMatchObject({ kind: "player", name: "Ben" });
+  });
+
+  it("gibt null für Text ohne Karte zurück", () => {
+    for (const text of ["", "   ", "https://example.com", "irgendein Text", "https://wolfgolf.club/#x=abc"]) {
+      expect(parseShareLink(text)).toBeNull();
+    }
   });
 });
