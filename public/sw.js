@@ -1,13 +1,15 @@
-const CACHE_NAME = 'golf-hcp-tracker-v2';
+const CACHE_NAME = 'golf-wolf-v1';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
+  '/favicon.svg',
   '/favicon-16.png',
   '/favicon-32.png',
   '/apple-touch-icon.png',
   '/pwa-192.png',
   '/pwa-512.png',
+  '/pwa-maskable-512.png',
 ];
 
 self.addEventListener('install', (event) => {

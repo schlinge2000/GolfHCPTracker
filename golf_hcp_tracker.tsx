@@ -1774,7 +1774,7 @@ function DataPortability({db, onJsonImport, onGolfDePdfImport}) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `golf-hcp-export-${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `golf-wolf-export-${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1993,7 +1993,7 @@ function AppFooter() {
     <footer style={{...cardStyle,padding:"18px 20px",marginTop:24,background:"linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(241,245,242,0.95) 100%)"}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))",gap:18}}>
         <div>
-          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Golf HCP Tracker</div>
+          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Golf Wolf</div>
           <div style={{fontSize:13,color:"var(--color-text-secondary)",lineHeight:1.6}}>
             Lokaler Golf-Handicap-Tracker fuer Runden, Simulator und golf.de PDF-Import direkt im Browser.
           </div>
@@ -2015,7 +2015,7 @@ function AppFooter() {
         </div>
       </div>
       <div style={{marginTop:16,paddingTop:14,borderTop:"1px solid var(--color-border-tertiary)",display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",fontSize:12,color:"var(--color-text-secondary)"}}>
-        <span>{year} Golf HCP Tracker</span>
+        <span>{year} Golf Wolf</span>
         <span>Feedback und Fehlermeldungen laufen ueber GitHub Issues.</span>
       </div>
     </footer>
@@ -2052,6 +2052,10 @@ function LandingPage({profile, onSave}) {
         <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 82% 18%, rgba(255,255,255,0.2), transparent 24%), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",backgroundSize:"auto, 28px 28px",opacity:0.35,pointerEvents:"none"}}/>
         <div style={{position:"relative",display:"flex",flexWrap:"wrap",gap:24,alignItems:"start"}}>
           <div style={{flex:"1 1 420px",minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}>
+              <BrandMark size={46}/>
+              <div style={{fontSize:24,fontWeight:700,letterSpacing:"-0.01em"}}>Golf Wolf</div>
+            </div>
             <div style={sectionTitleStyle}>Golf Handicap Im Browser</div>
             <div style={{fontSize:40,lineHeight:1.05,fontWeight:700,maxWidth:560,marginBottom:12}}>Der einfache Tracker fuer HCP, Runden und Verlauf.</div>
             <div style={{fontSize:16,lineHeight:1.6,color:"rgba(255,255,255,0.78)",maxWidth:560,marginBottom:18}}>
@@ -2179,10 +2183,34 @@ function NavIcon({paths, size=20}) {
   );
 }
 
+// Bildmarke "Golf Wolf": Golffahne mit Wolfskopf im Profil.
+// Die Geometrie ist identisch zu scripts/generate-icons.py (Quelle der Icons in public/).
+const WOLF_FLAG_PATH = "M 17.5 8.5 C 30 6.5 39.5 10 50.5 9.5 L 44.5 21.5 L 50.5 33.5 C 39.5 33 30 36.5 17.5 34.5 Z";
+const WOLF_HEAD_PATH = "M 2 37 L 30 33 L 36 27 L 46 24 L 58 0 L 69 23 L 80 32 L 91 45 L 75 50 L 84 60 L 66 62 L 69 71 L 50 66 L 41 62 L 28 51 L 12 47 L 5 45.5 L 0 41 Z";
+const WOLF_EYE_PATH = "M 33 30.5 L 41.5 33 L 38 37 L 32 34.5 Z";
+const WOLF_EAR_PATH = "M 53 9 L 63 21 L 55 21 Z";
+const WOLF_DARK = "#0E4C3A";
+
+function WolfFlagMark({size=34}) {
+  return (
+    <svg viewBox="0 0 64 64" width={size} height={size} aria-hidden="true" style={{flexShrink:0,display:"block"}}>
+      <g transform="translate(-11.26 -0.71) scale(1.34)">
+        <line x1="15.5" y1="8.5" x2="15.5" y2="42.3" stroke="#fff" strokeWidth={3} strokeLinecap="round"/>
+        <path d={WOLF_FLAG_PATH} fill="#fff"/>
+        <g transform="translate(19.898 12.748) scale(0.255)">
+          <path d={WOLF_HEAD_PATH} fill={WOLF_DARK}/>
+          <path d={WOLF_EYE_PATH} fill="#fff"/>
+          <path d={WOLF_EAR_PATH} fill="#fff"/>
+        </g>
+      </g>
+    </svg>
+  );
+}
+
 function BrandMark({size=34}) {
   return (
-    <div style={{width:size,height:size,borderRadius:12,flexShrink:0,display:"grid",placeItems:"center",background:"linear-gradient(135deg, #1D9E75 0%, #14684f 100%)",boxShadow:"0 8px 18px rgba(6,26,19,0.42)",color:"#fff"}}>
-      <NavIcon paths={["M8 20V4","M8 5.2l8 2.4-8 2.4","M5.5 20h6"]} size={Math.round(size*0.62)}/>
+    <div style={{width:size,height:size,borderRadius:Math.round(size*0.35),flexShrink:0,display:"grid",placeItems:"center",background:"linear-gradient(135deg, #25AF83 0%, #1D9E75 50%, #0F5C46 100%)",boxShadow:"0 8px 18px rgba(6,26,19,0.42)"}}>
+      <WolfFlagMark size={size}/>
     </div>
   );
 }
@@ -2212,7 +2240,7 @@ function SideNav({view, onSelect, isDesktop, collapsed, onToggleCollapsed, open,
             <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
               <BrandMark/>
               <div style={{minWidth:0}}>
-                <div style={{fontSize:14,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Golf HCP Tracker</div>
+                <div style={{fontSize:14,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Golf Wolf</div>
                 <div style={{fontSize:11,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{profileName||"DGV · WHS"}</div>
               </div>
             </div>
@@ -2299,7 +2327,7 @@ function MobileTopBar({title, displayHcp, onOpenNav, maxWidth}) {
           <NavIcon paths={["M4 7h16","M4 12h16","M4 17h16"]}/>
         </button>
         <div style={{minWidth:0,flex:1}}>
-          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Golf HCP Tracker</div>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Golf Wolf</div>
           <div style={{fontSize:15,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
         </div>
         <div style={{textAlign:"right",flexShrink:0}}>
@@ -2405,7 +2433,7 @@ export default function App() {
             <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at top right, rgba(255,255,255,0.16), transparent 28%), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)",backgroundSize:"auto, 24px 24px",opacity:0.4,pointerEvents:"none"}}/>
             <div>
               {isDesktop && <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",opacity:0.72,marginBottom:8}}>Personal Golf Office</div>}
-              <div style={{fontSize:isDesktop?28:22,fontWeight:600,marginBottom:6}}>{isDesktop ? "Golf HCP Tracker" : db.profile.name}</div>
+              <div style={{fontSize:isDesktop?28:22,fontWeight:600,marginBottom:6}}>{isDesktop ? "Golf Wolf" : db.profile.name}</div>
               <div style={{fontSize:14,color:"rgba(255,255,255,0.72)"}}>{isDesktop ? `${db.profile.name} · DGV · WHS` : "DGV · WHS"}</div>
             </div>
             <div style={{textAlign:"right",marginLeft:"auto",minWidth:180,position:"relative"}}>
