@@ -13,8 +13,12 @@
  * liegt darunter.
  */
 
+import { USAGE_INSTALL_ID_PATTERN, USAGE_RETENTION_DAYS } from "./usageAggregate";
+
 export const USAGE_STORAGE_KEY = "golf_hcp_usage";
-export const USAGE_ID_RETENTION_DAYS = 400;
+
+/** Gleiche Quelle wie die Function, damit Datenschutztext und Server nicht auseinanderlaufen. */
+export const USAGE_ID_RETENTION_DAYS = USAGE_RETENTION_DAYS;
 
 const DEFAULT_ENDPOINT = "/api/usage";
 const MAX_ATTEMPTS_PER_SESSION = 5;
@@ -33,7 +37,6 @@ export type UsageStats = {
 };
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const INSTALL_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Lokaler Kalendertag als "YYYY-MM-DD" (bewusst lokal, nicht UTC: "einmal pro Tag" aus Nutzersicht). */
 export function toDayString(date = new Date()) {
@@ -44,7 +47,7 @@ export function toDayString(date = new Date()) {
 }
 
 export function isValidInstallId(value: unknown) {
-  return typeof value === "string" && INSTALL_ID_PATTERN.test(value);
+  return typeof value === "string" && USAGE_INSTALL_ID_PATTERN.test(value);
 }
 
 export function isValidDay(value: unknown) {
