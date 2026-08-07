@@ -31,8 +31,8 @@ const LEGAL = {
   },
   operator: {
     name: "Christian Mießen",
-    street: "",       // Wohnanschrift: Straße und Hausnummer (ladungsfähig, kein Postfach)
-    postalCity: "",   // Wohnanschrift: PLZ und Ort
+    street: "Euchener Straße 59",
+    postalCity: "52146 Würselen",
     country: "Deutschland",
     // Alias auf der eigenen Domain, muss als Weiterleitung auf ein echtes Postfach
     // eingerichtet sein – eine im Impressum genannte, nicht erreichbare Adresse ist
