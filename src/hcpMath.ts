@@ -126,6 +126,8 @@ export type TimelineRound = {
   adjustedGross?: number | string;
   courseRating?: number | string;
   slopeRating?: number | string;
+  source?: string;
+  handicapIndexBefore?: number | string;
 };
 
 export type TimelineStep<T> = {
@@ -136,24 +138,39 @@ export type TimelineStep<T> = {
   hcpAfter: number;    // geführter Index NACH dieser Runde (inkl. Bremse)
 };
 
+function clampHcp(v: number) {
+  return Math.min(54, Math.max(0, v));
+}
+
 // Chronologische WHS-Engine. Erwartet bereits gefilterte, chronologisch
 // sortierte Runden. Modelliert – in dieser Reihenfolge – pro Runde:
-//   1. Rohdifferenzial (9-Loch nutzt den erwarteten Wert aus dem laufenden Index)
+//   1. Rohdifferenzial (9-Loch nutzt den erwarteten Wert aus dem Index davor)
 //   2. Exceptional-Score-Reduktion zum Ereigniszeitpunkt auf das 20er-Fenster
 //   3. WHS-Grundwert aus den besten N der letzten 20 Differenziale
 //   4. DGV-Anfängerregel (Bremse)
 // Wichtig: Die Reduktion greift chronologisch genau dann, wenn die
 // Ausnahmerunde gespielt wurde – nicht rückwirkend in den Rohdaten.
+//
+// Für golf.de-Importe wird als "Index davor" der von golf.de geführte
+// handicapIndexBefore verwendet. Das ist der exakte historische Index und
+// verhindert, dass ein selbst nachgerechneter Verlauf abdriftet und dadurch
+// z. B. die 7-Schläge-Schwelle des Exceptional Scores knapp verfehlt.
 export function buildIndexTimeline<T extends TimelineRound>(
   rounds: T[],
   startHcp: number | string = 54,
 ): TimelineStep<T>[] {
-  let currentHcp = Math.min(54, Math.max(0, parseFloat(String(startHcp)) || 54));
+  let currentHcp = clampHcp(parseFloat(String(startHcp)) || 54);
   const window: { stepIndex: number; diff: number }[] = [];
   const steps: TimelineStep<T>[] = [];
 
+  const importedBefore = (round: T) => {
+    const v = parseFloat(String(round.handicapIndexBefore ?? ""));
+    return round.source === "golf.de-pdf" && Number.isFinite(v) ? clampHcp(v) : null;
+  };
+
   for (const round of rounds) {
-    const preRoundHcp = currentHcp;
+    const anchored = importedBefore(round);
+    const preRoundHcp = anchored ?? currentHcp;
     const rawDiff = calcRawScoreDiff(round, preRoundHcp);
     if (rawDiff === null) continue;
 
@@ -166,7 +183,7 @@ export function buildIndexTimeline<T extends TimelineRound>(
     }
 
     const base = calcHcp(window.slice(-20).map(entry => entry.diff));
-    currentHcp = base === null ? currentHcp : applyBeginnerRetention(base, preRoundHcp);
+    currentHcp = base === null ? preRoundHcp : applyBeginnerRetention(base, preRoundHcp);
 
     steps.push({ round, preRoundHcp, rawDiff, diff: rawDiff, hcpAfter: currentHcp });
   }
@@ -174,6 +191,13 @@ export function buildIndexTimeline<T extends TimelineRound>(
   // Endgültige (ggf. reduzierte) Differenziale zurückschreiben, damit Anzeige,
   // Zähl-Logik und Projektion mit den finalen Werten (= golf.de "SD") arbeiten.
   for (const entry of window) steps[entry.stepIndex].diff = entry.diff;
+
+  // Historischen Verlauf (hcpAfter) für Importe exakt aus golf.de's HCPI-davor
+  // der jeweils nächsten Runde übernehmen; der letzte Wert bleibt berechnet.
+  for (let k = 0; k < steps.length - 1; k += 1) {
+    const nextBefore = importedBefore(steps[k + 1].round);
+    if (nextBefore !== null) steps[k].hcpAfter = nextBefore;
+  }
 
   return steps;
 }
