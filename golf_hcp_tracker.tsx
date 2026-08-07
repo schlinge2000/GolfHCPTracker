@@ -22,6 +22,8 @@ const COLORS = { hcp:"#1D9E75", stroke:"#378ADD", stableford:"#7F77DD", border:"
 const inp: CSSProperties = { width:"100%", boxSizing:"border-box", padding:"10px 12px", borderRadius:"var(--border-radius-md)", border:"1px solid var(--color-border-secondary)", background:"rgba(255,255,255,0.9)", color:"var(--color-text-primary)", fontSize:14, fontFamily:"var(--font-sans)", boxShadow:"inset 0 1px 0 rgba(255,255,255,0.55)" };
 const sel = { ...inp };
 const appShellPadding = "max(1rem, calc(env(safe-area-inset-top) + 0.5rem)) max(1rem, calc(env(safe-area-inset-right) + 1rem)) calc(env(safe-area-inset-bottom) + 3rem) max(1rem, calc(env(safe-area-inset-left) + 1rem))";
+// Der Sidebar-Shell setzt den Top-Inset selbst (Rail bzw. mobile Topbar), daher hier ohne safe-area-inset-top.
+const contentShellPadding = "1.25rem max(1rem, calc(env(safe-area-inset-right) + 1rem)) calc(env(safe-area-inset-bottom) + 3rem) max(1rem, calc(env(safe-area-inset-left) + 1rem))";
 const cardStyle: CSSProperties = { background:"rgba(255,255,255,0.92)", border:"1px solid var(--color-border-tertiary)", borderRadius:"var(--border-radius-lg)", boxShadow:"var(--shadow-card)", backdropFilter:"blur(14px)" };
 const subtleCardStyle: CSSProperties = { background:"linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(246,248,245,0.95) 100%)", border:"1px solid var(--color-border-tertiary)", borderRadius:"var(--border-radius-md)", boxShadow:"var(--shadow-soft)" };
 
@@ -2132,14 +2134,211 @@ function LandingPage({profile, onSave}) {
   );
 }
 
+const SIDEBAR_WIDTH = 248;
+const SIDEBAR_WIDTH_COLLAPSED = 76;
+const NAV_COLLAPSED_KEY = "golf_hcp_nav_collapsed";
+const DESKTOP_QUERY = "(min-width: 1024px)";
+const NAV_ITEMS = [
+  { id:"dashboard", label:"Dashboard", icon:["M4 13h6V4H4v9Z","M14 20h6v-9h-6v9Z","M4 20h6v-4H4v4Z","M14 8h6V4h-6v4Z"] },
+  { id:"simulator", label:"Simulator", icon:["M4 17l5-5 3 3 7-7","M15 8h5v5"] },
+  { id:"rounds", label:"Runden", icon:["M8 6h12","M8 12h12","M8 18h12","M4 6h.01","M4 12h.01","M4 18h.01"] },
+  { id:"courses", label:"Plätze", icon:["M7 20V4","M7 5.2l9 2.6-9 2.6","M4.5 20h6"] },
+  { id:"profile", label:"Profil", icon:["M12 11a4 4 0 100-8 4 4 0 000 8Z","M4.5 21a7.5 7.5 0 0115 0"] },
+  { id:"data", label:"Daten", icon:["M12 3v11","M8.5 10.5L12 14l3.5-3.5","M4 20h16"] },
+  { id:"info", label:"HCP-Info", icon:["M12 21a9 9 0 100-18 9 9 0 000 18Z","M12 11v6","M12 8h.01"] },
+];
+
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(()=>{
+    if (typeof window==="undefined" || typeof window.matchMedia!=="function") return false;
+    return window.matchMedia(query).matches;
+  });
+
+  useEffect(()=>{
+    if (typeof window==="undefined" || typeof window.matchMedia!=="function") return;
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return ()=>media.removeEventListener("change", update);
+  },[query]);
+
+  return matches;
+}
+
+function loadNavCollapsed() {
+  try { return localStorage.getItem(NAV_COLLAPSED_KEY)==="1"; } catch(e) { return false; }
+}
+function saveNavCollapsed(collapsed) { try { localStorage.setItem(NAV_COLLAPSED_KEY, collapsed?"1":"0"); } catch(e) {} }
+
+function NavIcon({paths, size=20}) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flexShrink:0,display:"block"}}>
+      {paths.map((d,i)=><path key={i} d={d}/>)}
+    </svg>
+  );
+}
+
+function BrandMark({size=34}) {
+  return (
+    <div style={{width:size,height:size,borderRadius:12,flexShrink:0,display:"grid",placeItems:"center",background:"linear-gradient(135deg, #1D9E75 0%, #14684f 100%)",boxShadow:"0 8px 18px rgba(6,26,19,0.42)",color:"#fff"}}>
+      <NavIcon paths={["M8 20V4","M8 5.2l8 2.4-8 2.4","M5.5 20h6"]} size={Math.round(size*0.62)}/>
+    </div>
+  );
+}
+
+function SideNav({view, onSelect, isDesktop, collapsed, onToggleCollapsed, open, onClose, profileName, displayHcp}) {
+  const [hovered, setHovered] = useState(null);
+  const showLabels = !isDesktop || !collapsed;
+  const panelWidth = isDesktop ? (collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH) : "min(86vw, 268px)";
+  const iconButton: CSSProperties = { display:"grid",placeItems:"center",width:34,height:34,flexShrink:0,padding:0,borderRadius:11,border:"1px solid rgba(255,255,255,0.16)",background:"rgba(255,255,255,0.08)",color:"#fff",cursor:"pointer" };
+
+  const panel = (
+    <nav aria-label="Hauptnavigation" style={{
+      width:panelWidth,height:"100%",boxSizing:"border-box",display:"flex",flexDirection:"column",
+      background:"linear-gradient(168deg, rgba(17,42,33,0.98) 0%, rgba(18,57,44,0.97) 44%, rgba(24,110,84,0.94) 100%)",
+      color:"#fff",
+      paddingTop:"calc(env(safe-area-inset-top) + 16px)",
+      paddingBottom:"calc(env(safe-area-inset-bottom) + 18px)",
+      paddingRight:showLabels?14:12,
+      paddingLeft:isDesktop?(showLabels?14:12):"max(14px, env(safe-area-inset-left))",
+      borderRight:"1px solid rgba(255,255,255,0.08)",
+      transition:"width 220ms ease",
+      overflowY:"auto",
+    }}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,justifyContent:showLabels?"space-between":"center"}}>
+        {showLabels ? (
+          <>
+            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+              <BrandMark/>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Golf HCP Tracker</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{profileName||"DGV · WHS"}</div>
+              </div>
+            </div>
+            <button onClick={isDesktop?onToggleCollapsed:onClose} title={isDesktop?"Navigation einklappen":"Navigation schliessen"} aria-label={isDesktop?"Navigation einklappen":"Navigation schliessen"} style={iconButton}>
+              <NavIcon paths={isDesktop?["M14 7l-5 5 5 5","M19 7l-5 5 5 5"]:["M7 7l10 10","M17 7L7 17"]} size={17}/>
+            </button>
+          </>
+        ) : <BrandMark/>}
+      </div>
+
+      {isDesktop && collapsed && (
+        <button onClick={onToggleCollapsed} title="Navigation ausklappen" aria-label="Navigation ausklappen" style={{...iconButton,width:"100%",height:32,marginBottom:14}}>
+          <NavIcon paths={["M10 7l5 5-5 5","M5 7l5 5-5 5"]} size={17}/>
+        </button>
+      )}
+
+      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+        {NAV_ITEMS.map(item=>{
+          const active = view===item.id;
+          const hot = hovered===item.id && !active;
+          return (
+            <button key={item.id} onClick={()=>onSelect(item.id)}
+              onMouseEnter={()=>setHovered(item.id)} onMouseLeave={()=>setHovered(null)}
+              aria-current={active?"page":undefined}
+              title={showLabels?undefined:item.label}
+              style={{
+                display:"flex",alignItems:"center",gap:12,width:"100%",boxSizing:"border-box",
+                justifyContent:showLabels?"flex-start":"center",
+                paddingTop:11,paddingBottom:11,paddingLeft:showLabels?12:0,paddingRight:showLabels?12:0,
+                borderRadius:14,
+                border:`1px solid ${active?"rgba(255,255,255,0.2)":"transparent"}`,
+                background:active?"linear-gradient(135deg, rgba(29,158,117,0.98) 0%, rgba(19,104,79,0.98) 100%)":hot?"rgba(255,255,255,0.09)":"transparent",
+                color:active?"#fff":"rgba(255,255,255,0.76)",
+                fontFamily:"var(--font-sans)",fontSize:14,fontWeight:active?600:500,
+                textAlign:"left",cursor:"pointer",
+                boxShadow:active?"0 12px 24px rgba(5,24,17,0.4)":"none",
+                transition:"background 160ms ease, color 160ms ease",
+              }}>
+              <NavIcon paths={item.icon}/>
+              {showLabels && <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.label}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{marginTop:"auto",paddingTop:16}}>
+        <div style={{borderTop:"1px solid rgba(255,255,255,0.12)",paddingTop:14,textAlign:showLabels?"left":"center"}}>
+          {showLabels && <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:"rgba(255,255,255,0.55)",marginBottom:4}}>HCP Index</div>}
+          <div style={{fontSize:showLabels?24:15,fontWeight:700,lineHeight:1.1}}>{displayHcp}</div>
+        </div>
+      </div>
+    </nav>
+  );
+
+  if (isDesktop) {
+    return (
+      <div style={{position:"sticky",top:0,alignSelf:"flex-start",height:"100dvh",flexShrink:0,zIndex:40}}>
+        {panel}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div onClick={onClose} aria-hidden="true" style={{position:"fixed",inset:0,zIndex:88,background:"rgba(8,22,17,0.46)",opacity:open?1:0,pointerEvents:open?"auto":"none",transition:"opacity 220ms ease"}}/>
+      <div aria-hidden={!open} style={{position:"fixed",top:0,bottom:0,left:0,zIndex:89,display:"flex",transform:open?"translateX(0)":"translateX(-104%)",visibility:open?"visible":"hidden",boxShadow:open?"0 24px 60px rgba(6,20,15,0.5)":"none",transition:"transform 240ms cubic-bezier(0.22,0.61,0.36,1), visibility 240ms ease"}}>
+        {panel}
+      </div>
+    </>
+  );
+}
+
+function MobileTopBar({title, displayHcp, onOpenNav, maxWidth}) {
+  return (
+    <header style={{
+      position:"sticky",top:0,zIndex:70,
+      paddingTop:"calc(env(safe-area-inset-top) + 8px)",paddingBottom:8,
+      paddingLeft:"max(12px, env(safe-area-inset-left))",paddingRight:"max(12px, env(safe-area-inset-right))",
+      background:"rgba(240,244,239,0.9)",backdropFilter:"blur(14px)",
+      borderBottom:"1px solid var(--color-border-tertiary)",
+    }}>
+      <div style={{display:"flex",alignItems:"center",gap:12,maxWidth,margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
+        <button onClick={onOpenNav} aria-label="Navigation öffnen" style={{display:"grid",placeItems:"center",width:40,height:40,flexShrink:0,padding:0,borderRadius:13,border:"1px solid var(--color-border-tertiary)",background:"rgba(255,255,255,0.92)",color:"var(--color-text-primary)",cursor:"pointer",boxShadow:"var(--shadow-soft)"}}>
+          <NavIcon paths={["M4 7h16","M4 12h16","M4 17h16"]}/>
+        </button>
+        <div style={{minWidth:0,flex:1}}>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:"var(--color-text-secondary)"}}>Golf HCP Tracker</div>
+          <div style={{fontSize:15,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
+        </div>
+        <div style={{textAlign:"right",flexShrink:0}}>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"var(--color-text-secondary)"}}>HCP</div>
+          <div style={{fontSize:18,fontWeight:700,color:COLORS.hcp,lineHeight:1.1}}>{displayHcp}</div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
 export default function App() {
   const [db, setDB] = useState(initDB);
   const [view, setView] = useState("dashboard");
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
+  const [navCollapsed, setNavCollapsed] = useState(loadNavCollapsed);
+  const [navOpen, setNavOpen] = useState(false);
   const [form, setForm] = useState(null);
   const [courseForm, setCourseForm] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   useEffect(()=>saveDB(db),[db]);
+
+  useEffect(()=>{ if(isDesktop) setNavOpen(false); },[isDesktop]);
+
+  useEffect(()=>{
+    if (!navOpen || isDesktop) return;
+    const handleKey = e => { if(e.key==="Escape") setNavOpen(false); };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKey);
+    return ()=>{
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKey);
+    };
+  },[navOpen, isDesktop]);
+
+  const toggleNavCollapsed = () => setNavCollapsed(prev=>{ const next=!prev; saveNavCollapsed(next); return next; });
+  const selectView = id => { setView(id); setNavOpen(false); };
 
   const updateDB = fn => setDB(prev=>{ const next=normalizeDB(fn({...prev})); saveDB(next); return next; });
 
@@ -2183,77 +2382,90 @@ export default function App() {
 
   if (!db.profile.name) return <LandingPage profile={db.profile} onSave={saveProfile}/>;
 
+  const activeNavItem = NAV_ITEMS.find(item=>item.id===view);
+  const contentMaxWidth = isDesktop ? (navCollapsed ? 1280 : 1080) : 760;
+
   return (
-    <div style={{maxWidth:760,margin:"0 auto",padding:appShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
-      <div style={{...cardStyle,display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:18,gap:16,flexWrap:"wrap",padding:"22px 24px",background:"linear-gradient(140deg, rgba(20,46,37,0.96) 0%, rgba(18,57,44,0.94) 45%, rgba(29,158,117,0.76) 100%)",color:"#fff",position:"relative",overflow:"hidden"}}>
-        <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at top right, rgba(255,255,255,0.16), transparent 28%), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)",backgroundSize:"auto, 24px 24px",opacity:0.4,pointerEvents:"none"}}/>
-        <div>
-          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",opacity:0.72,marginBottom:8}}>Personal Golf Office</div>
-          <div style={{fontSize:28,fontWeight:600,marginBottom:6}}>Golf HCP Tracker</div>
-          <div style={{fontSize:14,color:"rgba(255,255,255,0.72)"}}>{db.profile.name} · DGV · WHS</div>
-        </div>
-        <div style={{textAlign:"right",marginLeft:"auto",minWidth:180,position:"relative"}}>
-          <HcpTooltip
-              displayHcp={displayHcp}
-              estimatedHcp={estimatedHcp}
-              roundCount={recentTimeline.length}
-              take={hcpRule?.take ?? 0}
-              adjustment={hcpRule?.adj ?? 0}
-              countingDiffs={countingDiffs}
-            >
-            <div style={{display:"inline-flex",alignItems:"center",justifyContent:"flex-end",gap:6,marginBottom:4}}>
-              <span style={{fontSize:11,color:"rgba(255,255,255,0.68)"}}>{estimatedHcp?"Aktueller HCP Index":"Start-HCP"}</span>
-              <span style={{width:18,height:18,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.22)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:11,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>?</span>
+    <div style={{display:"flex",alignItems:"stretch",minHeight:"100dvh",width:"100%"}}>
+      <SideNav
+        view={view}
+        onSelect={selectView}
+        isDesktop={isDesktop}
+        collapsed={navCollapsed}
+        onToggleCollapsed={toggleNavCollapsed}
+        open={navOpen}
+        onClose={()=>setNavOpen(false)}
+        profileName={db.profile.name}
+        displayHcp={displayHcp}
+      />
+      <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
+        {!isDesktop && <MobileTopBar title={activeNavItem?.label ?? "Dashboard"} displayHcp={displayHcp} onOpenNav={()=>setNavOpen(true)} maxWidth={contentMaxWidth}/>}
+        <div style={{maxWidth:contentMaxWidth,margin:"0 auto",padding:contentShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
+          <div style={{...cardStyle,display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:18,gap:16,flexWrap:"wrap",padding:isDesktop?"22px 24px":"18px 20px",background:"linear-gradient(140deg, rgba(20,46,37,0.96) 0%, rgba(18,57,44,0.94) 45%, rgba(29,158,117,0.76) 100%)",color:"#fff",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at top right, rgba(255,255,255,0.16), transparent 28%), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)",backgroundSize:"auto, 24px 24px",opacity:0.4,pointerEvents:"none"}}/>
+            <div>
+              {isDesktop && <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",opacity:0.72,marginBottom:8}}>Personal Golf Office</div>}
+              <div style={{fontSize:isDesktop?28:22,fontWeight:600,marginBottom:6}}>{isDesktop ? "Golf HCP Tracker" : db.profile.name}</div>
+              <div style={{fontSize:14,color:"rgba(255,255,255,0.72)"}}>{isDesktop ? `${db.profile.name} · DGV · WHS` : "DGV · WHS"}</div>
             </div>
-            <div style={{fontSize:44,fontWeight:700,color:"#fff",lineHeight:1}}>{displayHcp}</div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,0.68)",marginTop:6}}>{estimatedHcp?`aus ${Math.min(hcpRounds.length,20)} HCP-wirks. Runden`:"noch keine gewerteten Runden"}</div>
-          </HcpTooltip>
+            <div style={{textAlign:"right",marginLeft:"auto",minWidth:180,position:"relative"}}>
+              <HcpTooltip
+                  displayHcp={displayHcp}
+                  estimatedHcp={estimatedHcp}
+                  roundCount={recentTimeline.length}
+                  take={hcpRule?.take ?? 0}
+                  adjustment={hcpRule?.adj ?? 0}
+                  countingDiffs={countingDiffs}
+                >
+                <div style={{display:"inline-flex",alignItems:"center",justifyContent:"flex-end",gap:6,marginBottom:4}}>
+                  <span style={{fontSize:11,color:"rgba(255,255,255,0.68)"}}>{estimatedHcp?"Aktueller HCP Index":"Start-HCP"}</span>
+                  <span style={{width:18,height:18,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.22)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:11,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>?</span>
+                </div>
+                <div style={{fontSize:44,fontWeight:700,color:"#fff",lineHeight:1}}>{displayHcp}</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.68)",marginTop:6}}>{estimatedHcp?`aus ${Math.min(hcpRounds.length,20)} HCP-wirks. Runden`:"noch keine gewerteten Runden"}</div>
+              </HcpTooltip>
+            </div>
+          </div>
+
+          {view==="dashboard" && <Dashboard rounds={sortedRounds} hcpRounds={hcpRounds} recentDiffs={recentDiffs} estimatedHcp={estimatedHcp} onNew={()=>{newRound();setView("rounds");}} hcpTimeline={hcpTimeline} diffByRoundId={diffByRoundId} variant="focus"/>}
+          {view==="simulator" && <HcpSimulator courses={db.courses} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} simulatedRounds={db.simulatedRounds} onAddRound={saveSimulatedRound} onDeleteRound={deleteSimulatedRound} onClearRounds={clearSimulatedRounds}/>}
+          {view==="rounds" && <RoundList rounds={sortedRounds} courses={db.courses} onNew={newRound} onEdit={r=>setForm({...r})} onDelete={id=>setDeleteConfirm(id)} countingIds={countingIds} diffByRoundId={diffByRoundId}/>}
+          {view==="courses" && <CourseList courses={db.courses} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:"",nineHolePhcpFactor:0.5})} onEdit={c=>setCourseForm({...c})}/>}
+          {view==="profile" && <ProfileForm profile={db.profile} onSave={saveProfile}/>}
+          {view==="data" && <DataPortability
+            db={db}
+            onJsonImport={data=>{
+              const normalized = normalizeDB(data);
+              saveDB(normalized);
+              setDB(normalized);
+            }}
+            onGolfDePdfImport={(parsedRounds, mode)=>{
+              const result = mode === "replace"
+                ? replaceGolfDeImport(db, parsedRounds)
+                : mergeGolfDeImport(db, parsedRounds);
+              saveDB(result.db);
+              setDB(result.db);
+              return result.summary;
+            }}
+          />}
+          {view==="info" && <HcpInfo/>}
+
+          <UpdateAppPrompt/>
+          <InstallAppPrompt/>
+
+          {form && <Modal title={form.id?"Runde bearbeiten":"Neue Runde"} onClose={()=>setForm(null)}><RoundForm initial={form} courses={db.courses} currentHcp={displayHcp} onSave={saveRound} onCancel={()=>setForm(null)}/></Modal>}
+          {courseForm && <Modal title={courseForm.id?"Platz bearbeiten":"Neuer Platz"} onClose={()=>setCourseForm(null)}><CourseForm initial={courseForm} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} onSave={saveCourse} onCancel={()=>setCourseForm(null)}/></Modal>}
+          {deleteConfirm && <Modal title="Runde löschen?" onClose={()=>setDeleteConfirm(null)}>
+            <p style={{color:COLORS.textSec,fontSize:14}}>Diese Runde wird unwiderruflich gelöscht.</p>
+            <div style={{display:"flex",gap:8,marginTop:16}}>
+              <button onClick={()=>deleteRound(deleteConfirm)} style={{padding:"8px 16px",borderRadius:"var(--border-radius-md)",background:"#E24B4A",color:"#fff",border:"none",cursor:"pointer",fontWeight:500}}>Löschen</button>
+              <button onClick={()=>setDeleteConfirm(null)} style={{padding:"8px 16px",borderRadius:"var(--border-radius-md)",background:"transparent",border:`0.5px solid ${COLORS.border}`,cursor:"pointer",color:"var(--color-text-primary)"}}>Abbrechen</button>
+            </div>
+          </Modal>}
+
+          <AppFooter/>
         </div>
       </div>
-
-      <div style={{display:"flex",gap:6,marginBottom:22,padding:"8px",background:"rgba(255,255,255,0.7)",border:"1px solid var(--color-border-tertiary)",borderRadius:"18px",boxShadow:"var(--shadow-soft)",overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",backdropFilter:"blur(12px)"}}>
-        {[["dashboard","Dashboard"],["simulator","Simulator"],["rounds","Runden"],["courses","Plätze"],["profile","Profil"],["data","Daten"],["info","HCP-Info"]].map(([id,label])=>(
-          <button key={id} onClick={()=>setView(id)} style={{padding:"8px 14px",borderRadius:"12px",background:view===id?"linear-gradient(135deg, #1D9E75 0%, #14684f 100%)":"transparent",color:view===id?"#fff":COLORS.textSec,border:"none",cursor:"pointer",fontWeight:view===id?600:500,fontSize:14,whiteSpace:"nowrap",flexShrink:0,boxShadow:view===id?"0 10px 20px rgba(29,158,117,0.22)":"none"}}>{label}</button>
-        ))}
-      </div>
-
-      {view==="dashboard" && <Dashboard rounds={sortedRounds} hcpRounds={hcpRounds} recentDiffs={recentDiffs} estimatedHcp={estimatedHcp} onNew={()=>{newRound();setView("rounds");}} hcpTimeline={hcpTimeline} diffByRoundId={diffByRoundId} variant="focus"/>}
-      {view==="simulator" && <HcpSimulator courses={db.courses} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} simulatedRounds={db.simulatedRounds} onAddRound={saveSimulatedRound} onDeleteRound={deleteSimulatedRound} onClearRounds={clearSimulatedRounds}/>}
-      {view==="rounds" && <RoundList rounds={sortedRounds} courses={db.courses} onNew={newRound} onEdit={r=>setForm({...r})} onDelete={id=>setDeleteConfirm(id)} countingIds={countingIds} diffByRoundId={diffByRoundId}/>}
-      {view==="courses" && <CourseList courses={db.courses} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:"",nineHolePhcpFactor:0.5})} onEdit={c=>setCourseForm({...c})}/>}
-      {view==="profile" && <ProfileForm profile={db.profile} onSave={saveProfile}/>}
-      {view==="data" && <DataPortability
-        db={db}
-        onJsonImport={data=>{
-          const normalized = normalizeDB(data);
-          saveDB(normalized);
-          setDB(normalized);
-        }}
-        onGolfDePdfImport={(parsedRounds, mode)=>{
-          const result = mode === "replace"
-            ? replaceGolfDeImport(db, parsedRounds)
-            : mergeGolfDeImport(db, parsedRounds);
-          saveDB(result.db);
-          setDB(result.db);
-          return result.summary;
-        }}
-      />}
-      {view==="info" && <HcpInfo/>}
-
-      <UpdateAppPrompt/>
-      <InstallAppPrompt/>
-
-      {form && <Modal title={form.id?"Runde bearbeiten":"Neue Runde"} onClose={()=>setForm(null)}><RoundForm initial={form} courses={db.courses} currentHcp={displayHcp} onSave={saveRound} onCancel={()=>setForm(null)}/></Modal>}
-      {courseForm && <Modal title={courseForm.id?"Platz bearbeiten":"Neuer Platz"} onClose={()=>setCourseForm(null)}><CourseForm initial={courseForm} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} onSave={saveCourse} onCancel={()=>setCourseForm(null)}/></Modal>}
-      {deleteConfirm && <Modal title="Runde löschen?" onClose={()=>setDeleteConfirm(null)}>
-        <p style={{color:COLORS.textSec,fontSize:14}}>Diese Runde wird unwiderruflich gelöscht.</p>
-        <div style={{display:"flex",gap:8,marginTop:16}}>
-          <button onClick={()=>deleteRound(deleteConfirm)} style={{padding:"8px 16px",borderRadius:"var(--border-radius-md)",background:"#E24B4A",color:"#fff",border:"none",cursor:"pointer",fontWeight:500}}>Löschen</button>
-          <button onClick={()=>setDeleteConfirm(null)} style={{padding:"8px 16px",borderRadius:"var(--border-radius-md)",background:"transparent",border:`0.5px solid ${COLORS.border}`,cursor:"pointer",color:"var(--color-text-primary)"}}>Abbrechen</button>
-        </div>
-      </Modal>}
-
-      <AppFooter/>
     </div>
   );
 }
