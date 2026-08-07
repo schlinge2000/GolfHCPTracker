@@ -4,6 +4,7 @@ import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline } from "./src/hcpMath";
 import { suggestHoles, normalizeHoles, totalPar, buildAllocations, scoreMatchplay, scoreSkins, scoreNassau, scoreWolf, scoreBingoBangoBongo, nassauSegments, BBB_AWARDS, stablefordFromHoles, playedHoleCount, DEFAULT_HANDICAP_CONFIG } from "./src/gameMath";
+import { fetchUsageStats, isUsagePingEnabled, setUsagePingEnabled, whenUsagePingSettled, USAGE_ID_RETENTION_DAYS, type UsageStats } from "./src/usagePing";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -3038,6 +3039,54 @@ function DataPortability({db, onJsonImport, onGolfDePdfImport}) {
   );
 }
 
+function UsageCounterSetting() {
+  const [enabled, setEnabled] = useState(()=>isUsagePingEnabled());
+  const [stats, setStats] = useState<UsageStats|null>(null);
+  const [status, setStatus] = useState("loading");
+
+  useEffect(()=>{
+    if (!enabled) { setStats(null); setStatus("off"); return; }
+    let cancelled = false;
+    setStatus("loading");
+    // Erst den eigenen Ping abwarten, sonst zeigt die Zahl das eigene Geraet nicht.
+    whenUsagePingSettled().then(fetchUsageStats).then(result=>{
+      if (cancelled) return;
+      setStats(result);
+      setStatus(result ? "ready" : "unavailable");
+    });
+    return ()=>{ cancelled = true; };
+  },[enabled]);
+
+  const num = value => value.toLocaleString("de-DE");
+
+  return (
+    <div style={{...subtleCardStyle,padding:"12px 14px",marginTop:10,marginBottom:6}}>
+      <label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,cursor:"pointer",color:"var(--color-text-primary)"}}>
+        <input type="checkbox" checked={enabled} onChange={e=>setEnabled(setUsagePingEnabled(e.target.checked))} style={{marginTop:2}}/>
+        <span>Anonymen Nutzungszähler aktiv lassen</span>
+      </label>
+      <div style={{fontSize:12,color:"var(--color-text-secondary)",marginTop:8,lineHeight:1.6}}>
+        {status==="off" && "Zähler ist aus. Es wird nichts gesendet, die Installations-ID auf diesem Gerät ist gelöscht."}
+        {status==="loading" && "Zahlen werden geladen …"}
+        {status==="unavailable" && "Zahlen sind gerade nicht abrufbar (offline oder Zähl-Endpoint nicht eingerichtet)."}
+        {status==="ready" && stats && (
+          <>
+            <div style={{fontSize:13,fontWeight:600,color:"var(--color-text-primary)"}}>
+              {num(stats.activeLast30Days)} {stats.activeLast30Days===1?"Gerät":"Geräte"} in den letzten 30 Tagen aktiv
+            </div>
+            <div style={{marginTop:2}}>
+              heute {num(stats.activeToday)} · letzte 7 Tage {num(stats.activeLast7Days)} · insgesamt gezählt {num(stats.total)}
+            </div>
+            <div style={{marginTop:2}}>
+              Gezählt werden Geräte bzw. Browser-Installationen, nicht Personen: dasselbe Handy und derselbe Laptop sind zwei.
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HcpInfo({onOpenLegal}) {
   const card = (children) => (
     <div style={{...cardStyle,padding:"16px 20px",marginBottom:14}}>
@@ -3138,7 +3187,9 @@ function HcpInfo({onOpenLegal}) {
 
       {card(<>
         {h("Datenschutz und Impressum")}
-        {p("Die App speichert Runden, Plaetze und Profildaten lokal im Browser auf deinem Geraet. Es gibt keinen Login, keine Server-Synchronisation und kein eingebautes Tracking oder Analytics.")}
+        {p("Die App speichert Runden, Plätze und Profildaten lokal im Browser auf deinem Gerät. Es gibt keinen Login und keine Server-Synchronisation: Deine Runden, dein Name und deine Handicap-Werte verlassen dieses Gerät nicht. Es sind keine Analyse-Werkzeuge und keine Drittanbieter eingebunden, und es werden keine Cookies gesetzt.")}
+        {p("Damit sichtbar ist, wie viele Geräte die App überhaupt nutzen, sendet sie höchstens einmal pro Kalendertag eine zufällig erzeugte Installations-ID an ihren eigenen Zähl-Endpoint – sonst nichts. Abschnitt 4 der Datenschutzerklärung beschreibt das im Detail; hier kannst du es abschalten:")}
+        <UsageCounterSetting/>
         {p("Welche Daten wo liegen, wie lange sie bleiben und welche Rechte du hast, steht ausführlich in der Datenschutzerklärung.")}
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>
           <button
@@ -3242,6 +3293,7 @@ function Datenschutz() {
   const storageItems = [
     ["golf_hcp_db", "Profil (Anzeigename, Start-HCP), angelegte Plätze (Name, Course Rating, Slope, Par, Tee, Notizen), gespeicherte Runden (Datum, Platz, Brutto- bzw. Stableford-Ergebnis, Spielvorgabe, Kennzeichen wie „eingereicht“ und „Marker unterschrieben“) sowie Runden im Simulator."],
     ["golf_hcp_nav_collapsed", "Anzeige-Einstellung, ob die Seitennavigation eingeklappt ist."],
+    ["golf_hcp_usage", "Zufällige Installations-ID für den anonymen Nutzungszähler, der Tag des letzten gesendeten Pings und dein Ein-/Aus-Schalter dazu (Abschnitt 4). Der einzige Schlüssel, dessen Inhalt das Gerät verlässt – und nur die ID."],
   ];
 
   return (
@@ -3249,7 +3301,7 @@ function Datenschutz() {
       <LegalCard title="Das Wichtigste in vier Punkten">
         <LegalList items={[
           "Deine Runden, Plätze und Profildaten bleiben im Speicher deines Browsers auf deinem Gerät. Es gibt kein Benutzerkonto und keine Server-Synchronisation.",
-          "Kein Tracking, keine Analyse-Werkzeuge, keine Werbe-Cookies, keine Social-Media-Plugins.",
+          "Keine Analyse-Werkzeuge, keine Werbe-Cookies, keine Social-Media-Plugins, kein Wiedererkennen über Webseiten hinweg. Das Einzige, was übertragen wird, ist eine zufällige Installations-ID für den anonymen Nutzungszähler – höchstens einmal pro Tag, abschaltbar, siehe Abschnitt 4.",
           "Keine externen Schriftarten, Skripte oder Bibliotheken von Drittanbieter-Servern: Alles, was die App braucht, wird von ihrer eigenen Adresse geladen.",
           "Der golf.de-PDF-Import läuft vollständig in deinem Browser. Die PDF-Datei wird nicht hochgeladen.",
         ]}/>
@@ -3274,50 +3326,62 @@ function Datenschutz() {
             </div>
           ))}
         </div>
-        <LegalP>Diese Daten werden weder an den Betreiber noch an Dritte übertragen und auf keinen Server geschrieben. Der Betreiber hat keinen Zugriff darauf und kann sie nicht einsehen. Ob du dabei echte Namen von Mitspielern oder Golfanlagen einträgst, entscheidest du selbst; die App fragt keine Kontaktdaten ab.</LegalP>
+        <LegalP>Diese Inhalte werden weder an den Betreiber noch an Dritte übertragen und auf keinen Server geschrieben – mit einer Ausnahme: die Installations-ID aus <em>golf_hcp_usage</em>, siehe Abschnitt 4. Deine Runden, Plätze und Profildaten sind davon nicht betroffen; der Betreiber hat keinen Zugriff darauf und kann sie nicht einsehen. Ob du dabei echte Namen von Mitspielern oder Golfanlagen einträgst, entscheidest du selbst; die App fragt keine Kontaktdaten ab.</LegalP>
       </LegalCard>
 
       <LegalCard title="3. Speicherung im Browser statt Cookies">
         <LegalP>Die App setzt keine Cookies. Sie nutzt den lokalen Browserspeicher (localStorage) für deine Daten und einen Service Worker mit Browser-Cache, damit die App nach dem ersten Laden auch offline funktioniert und schnell startet.</LegalP>
         <LegalP>Diese Speicherung ist unbedingt erforderlich, um die von dir ausdrücklich gewünschte Funktion bereitzustellen – Runden dauerhaft behalten und die App offline nutzen. Sie ist deshalb nach § 25 Abs. 2 Nr. 2 TDDDG einwilligungsfrei; ein Cookie-Banner ist dafür nicht erforderlich.</LegalP>
+        <LegalP>Eine Ausnahme davon ist die Installations-ID des Nutzungszählers: Sie ist für den Betrieb der App nicht erforderlich. Deshalb lässt sie sich abschalten und wird dabei gelöscht – der nächste Abschnitt beschreibt sie vollständig.</LegalP>
       </LegalCard>
 
-      <LegalCard title="4. PDF-Import, Export und Backup">
+      <LegalCard title="4. Anonymer Nutzungszähler">
+        <LegalP>Der Betreiber möchte wissen, von wie vielen Geräten die App genutzt wird – nicht, wer sie nutzt oder was darin passiert. Dafür erzeugt die App beim ersten Start eine zufällige Kennung (eine UUID, z. B. „3f2a1c4e-…“) und speichert sie unter <em>golf_hcp_usage</em> auf deinem Gerät.</LegalP>
+        <LegalP>Höchstens einmal pro Kalendertag sendet die App diese Kennung an ihre eigene Adresse (den Pfad <em>/api/usage</em>). Übertragen wird ausschließlich die Kennung – keine Namen, keine Runden, keine Handicap-Werte, keine Angabe darüber, welche Funktionen du benutzt hast, und keine Seitenaufrufe. Serverseitig wird daraus nur vermerkt, dass diese Kennung an diesem Kalendertag aktiv war. IP-Adresse, Browserkennung (User-Agent), Referrer und die genaue Uhrzeit werden dabei nicht gespeichert. Es wird kein Cookie gesetzt und kein Analyse-Dienst und kein weiterer Anbieter eingeschaltet: Die Zählung läuft auf derselben Plattform, die die App ausliefert (Abschnitt 6).</LegalP>
+        <LegalP>Aus der Kennung lässt sich kein Name, keine Adresse und kein Gerät ermitteln; sie steht in keiner Verbindung zu deinen Runden und wird nicht mit den Server-Logfiles zusammengeführt. Sie ist trotzdem eine pseudonyme Kennung, weshalb dieser Abschnitt sie vollständig offenlegt. Gezählt werden Installationen, nicht Personen: Handy und Laptop derselben Person ergeben zwei.</LegalP>
+        <LegalP>Zweck ist ausschließlich die Reichweitenmessung in Form einer Gesamtzahl, um den Aufwand für die Weiterentwicklung einschätzen zu können. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; das berechtigte Interesse liegt darin, die Nutzung des eigenen Angebots in minimalem Umfang zu kennen. Die Speicherung der Kennung auf deinem Gerät ist für den Betrieb der App nicht erforderlich – deshalb kannst du ihr jederzeit widersprechen (Art. 21 DSGVO), ohne Angabe von Gründen und ohne Nachteil.</LegalP>
+        <LegalP>Den Schalter dafür findest du unter „HCP-Info“ im Abschnitt „Datenschutz und Impressum“. Schaltest du den Zähler aus, wird nichts mehr gesendet und die Kennung auf deinem Gerät gelöscht. Schaltest du ihn später wieder ein, entsteht eine neue Kennung, die sich der alten nicht zuordnen lässt. Bereits gezählte Tage bleiben als anonymer Eintrag ohne Bezug zu dir erhalten.</LegalP>
+        <LegalP>{`Die Zähleinträge werden spätestens ${USAGE_ID_RETENTION_DAYS} Tage nach dem jeweiligen Tag automatisch gelöscht. Da die App auch offline funktioniert, kann ein Ping nachträglich gesendet werden, sobald wieder eine Verbindung besteht – auch dann wird nur der Kalendertag vermerkt.`}</LegalP>
+      </LegalCard>
+
+      <LegalCard title="5. PDF-Import, Export und Backup">
         <LegalP>Beim Import eines golf.de-Scoring-Records wird die PDF-Datei mit der Bibliothek pdf.js direkt in deinem Browser gelesen und ausgewertet. Die Datei verlässt dein Gerät nicht, es findet kein Upload statt, und die Bibliothek wird mit der App ausgeliefert – nicht von einem fremden Server nachgeladen.</LegalP>
         <LegalP>Der Export im Bereich „Daten“ erzeugt eine JSON-Datei, die dein Browser lokal speichert (üblicherweise im Download-Ordner). Was du anschließend mit dieser Datei machst – etwa in einer Cloud ablegen –, liegt in deiner Verantwortung.</LegalP>
       </LegalCard>
 
-      <LegalCard title="5. Hosting und Server-Logfiles">
+      <LegalCard title="6. Hosting und Server-Logfiles">
         <LegalP>Die App wird als statische Webseite bereitgestellt durch {LEGAL.hosting.provider}, {LEGAL.hosting.address}.</LegalP>
         <LegalP>Beim Abruf überträgt dein Browser technisch notwendige Daten, die der Hosting-Anbieter in Server-Logfiles verarbeitet: IP-Adresse, Datum und Uhrzeit des Zugriffs, abgerufene Datei, übertragene Datenmenge, Referrer und Browser- bzw. Gerätekennung (User-Agent).</LegalP>
         <LegalP>Zweck ist die technische Bereitstellung, Stabilität und Sicherheit des Angebots. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; das berechtigte Interesse liegt im störungsfreien und sicheren Betrieb. Diese Logdaten werden vom Betreiber nicht personenbezogen ausgewertet und nicht mit deinen lokal gespeicherten Runden zusammengeführt; die Löschung richtet sich nach den Fristen des Anbieters. Der Anbieter wird dabei als Auftragsverarbeiter nach Art. 28 DSGVO auf Grundlage seines Data Processing Addendum tätig.</LegalP>
         <LegalP>Der Anbieter sitzt in den USA und liefert die Inhalte über ein weltweites Content-Delivery-Netzwerk aus; damit ist eine Übermittlung in die USA verbunden. {LEGAL.hosting.provider} ist nach dem EU-U.S. Data Privacy Framework zertifiziert, sodass sich die Übermittlung auf den Angemessenheitsbeschluss der EU-Kommission (Art. 45 DSGVO) stützt, ergänzend auf EU-Standarddatenschutzklauseln (Art. 46 Abs. 2 lit. c DSGVO).</LegalP>
+        <LegalP>Beim selben Anbieter liegen auch die Einträge des Nutzungszählers (Abschnitt 4), also je Eintrag eine zufällige Kennung und ein Kalendertag. Ein zusätzlicher Dienstleister kommt dadurch nicht hinzu.</LegalP>
         <div style={{fontSize:14,lineHeight:1.8}}>
           Datenschutzhinweise des Hosting-Anbieters:{" "}
           <a href={LEGAL.hosting.privacyUrl} target="_blank" rel="noreferrer" style={legalLinkStyle}>{LEGAL.hosting.privacyLabel}</a>
         </div>
       </LegalCard>
 
-      <LegalCard title="6. Externe Links und Installation als App">
+      <LegalCard title="7. Externe Links und Installation als App">
         <LegalP>Die App verlinkt auf GitHub (Repository und Fehlermeldungen). Diese Links öffnest du bewusst; erst dann werden Daten an GitHub übertragen, wofür die Datenschutzhinweise von GitHub Inc. gelten. Eingebettete Inhalte von GitHub oder anderen Diensten gibt es nicht.</LegalP>
         <LegalP>Installierst du die App über die Funktion deines Browsers oder Betriebssystems auf dem Startbildschirm, entstehen dadurch keine zusätzlichen Datenübermittlungen an den Betreiber. Die installierte Version verhält sich wie die Webseite.</LegalP>
       </LegalCard>
 
-      <LegalCard title="7. Keine Weitergabe, kein Profiling">
-        <LegalP>Es findet keine Weitergabe von Daten an Dritte zu eigenen Zwecken statt. Übermittlungen in Drittländer außerhalb der EU/des EWR beschränken sich auf das, was durch das Hosting (Abschnitt 5) und von dir selbst geöffnete Links (Abschnitt 6) technisch bedingt ist. Es gibt keine automatisierte Entscheidungsfindung und kein Profiling im Sinne von Art. 22 DSGVO.</LegalP>
+      <LegalCard title="8. Keine Weitergabe, kein Profiling">
+        <LegalP>Es findet keine Weitergabe von Daten an Dritte zu eigenen Zwecken statt. Übermittlungen in Drittländer außerhalb der EU/des EWR beschränken sich auf das, was durch das Hosting (Abschnitt 6) und von dir selbst geöffnete Links (Abschnitt 7) technisch bedingt ist. Es gibt keine automatisierte Entscheidungsfindung und kein Profiling im Sinne von Art. 22 DSGVO.</LegalP>
       </LegalCard>
 
-      <LegalCard title="8. Speicherdauer und Löschung">
+      <LegalCard title="9. Speicherdauer und Löschung">
         <LegalP>Deine Einträge bleiben so lange gespeichert, bis du sie löschst. Einzelne Runden entfernst du in der Rundenliste. Vollständig löschst du alle Daten, indem du in den Einstellungen deines Browsers die Website-Daten für diese App löschst; bei einer installierten App genügt in der Regel das Deinstallieren. Auch der Offline-Cache des Service Workers wird dabei entfernt.</LegalP>
         <LegalP>Ein Backup vor dem Löschen erstellst du im Bereich „Daten“ über den JSON-Export.</LegalP>
+        <LegalP>{`Unabhängig davon werden die Einträge des Nutzungszählers (Abschnitt 4) spätestens nach ${USAGE_ID_RETENTION_DAYS} Tagen automatisch gelöscht. Die Kennung auf deinem Gerät entfernst du sofort, indem du den Zähler ausschaltest.`}</LegalP>
       </LegalCard>
 
-      <LegalCard title="9. Deine Rechte">
+      <LegalCard title="10. Deine Rechte">
         <LegalP>Du hast nach der DSGVO das Recht auf Auskunft (Art. 15), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch gegen Verarbeitungen auf Grundlage berechtigter Interessen (Art. 21). Außerdem kannst du dich bei einer Datenschutz-Aufsichtsbehörde beschweren – zuständig ist die Behörde deines Wohnsitz-Bundeslandes oder die des Betreibers.</LegalP>
-        <LegalP>Praktischer Hinweis: Zu deinen lokal gespeicherten Runden kann der Betreiber keine Auskunft erteilen und sie auch nicht löschen, weil er keinen Zugriff darauf hat. Diese Daten hast du selbst vollständig in der Hand – Auskunft und Datenübertragbarkeit erfüllt der JSON-Export im Bereich „Daten“. Für Anfragen zu den Server-Logfiles nutze den in Abschnitt 1 genannten Kontaktweg.</LegalP>
+        <LegalP>Praktischer Hinweis: Zu deinen lokal gespeicherten Runden kann der Betreiber keine Auskunft erteilen und sie auch nicht löschen, weil er keinen Zugriff darauf hat. Diese Daten hast du selbst vollständig in der Hand – Auskunft und Datenübertragbarkeit erfüllt der JSON-Export im Bereich „Daten“. Für Anfragen zu den Server-Logfiles und zum Nutzungszähler nutze den in Abschnitt 1 genannten Kontaktweg.</LegalP>
       </LegalCard>
 
-      <LegalCard title="10. Stand und Änderungen">
+      <LegalCard title="11. Stand und Änderungen">
         <LegalP>Stand dieser Datenschutzerklärung: {formatLegalDate(LEGAL.updatedAt)}. Ändern sich Funktionen, Hosting oder Datenflüsse der App, wird diese Erklärung entsprechend angepasst.</LegalP>
       </LegalCard>
     </div>
@@ -3391,7 +3455,7 @@ function AppFooter({onOpenLegal}) {
             <button type="button" onClick={()=>onOpenLegal("datenschutz")} style={legalLinkButtonStyle}>Datenschutzerklärung</button>
           </div>
           <div style={{fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.6,marginTop:8}}>
-            Privates, nicht-kommerzielles Projekt. Daten bleiben lokal im Browser: kein Login, kein Tracking.
+            Privates, nicht-kommerzielles Projekt. Runden und Profildaten bleiben lokal im Browser: kein Login, keine Analyse-Werkzeuge. Übertragen wird nur eine anonyme ID für den Nutzungszähler, abschaltbar in der Datenschutzerklärung.
           </div>
         </div>
       </div>

@@ -2,6 +2,12 @@ import './compat'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from '../golf_hcp_tracker'
+import { initUsagePing } from './usagePing'
+
+// Nur im Build: im Dev-Server gibt es den Zaehl-Endpoint nicht.
+if (import.meta.env.PROD) {
+  initUsagePing()
+}
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   let refreshing = false
