@@ -4,6 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#1D9E75" />
+    <meta
+      name="description"
+      content="Der neue Handicap-Index steht sofort nach der Runde – ohne auf golf.de zu warten. Dazu erklärt: Wertungsfenster, Score Differenziale, Exceptional Score und Anfänger-Bremse. Mit golf.de-PDF-Import und Flight-Spielen. Kostenlos und ohne Konto."
+    />
+    <link rel="canonical" href="https://wolfgolf.club/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Wolf Golf" />
+    <meta property="og:locale" content="de_DE" />
+    <meta property="og:url" content="https://wolfgolf.club/" />
+    <meta property="og:title" content="Wolf Golf – versteh, wie dein Handicap entsteht" />
+    <meta
+      property="og:description"
+      content="Der neue Index steht sofort nach der Runde, statt auf golf.de zu warten – mit der Erklärung, welche WHS-Regel gegriffen hat. Besonders hilfreich, wenn du anfängst."
+    />
+    <meta property="og:image" content="https://wolfgolf.club/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Wolf Golf: Dashboard mit Handicap-Index, Wertungsfenster und Verlauf" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Wolf Golf – versteh, wie dein Handicap entsteht" />
+    <meta
+      name="twitter:description"
+      content="Hinter dem Handicap-Index steckt ein umfangreiches Regelwerk. Wolf Golf zeigt nach jeder Runde, welche Regel gegriffen hat."
+    />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Wolf Golf" />
@@ -40,8 +65,33 @@
           radial-gradient(circle at top right, rgba(55, 138, 221, 0.12), transparent 28%),
           linear-gradient(180deg, #f7faf7 0%, var(--color-background-page) 52%, #e7ece7 100%);
       }
+
+      /* Aufklappbare Fragen auf der Startseite: eigenes Plus/Minus statt Browser-Dreieck. */
+      summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .faq-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .faq-summary::after {
+        content: "+";
+        flex-shrink: 0;
+        font-size: 22px;
+        line-height: 1;
+        font-weight: 700;
+        color: #1d9e75;
+      }
+
+      details[open] > .faq-summary::after {
+        content: "\2013";
+      }
     </style>
-    <title>Wolf Golf</title>
+    <title>Wolf Golf – Handicap-Entwicklung nach WHS verstehen</title>
   </head>
   <body>
     <div id="root"></div>

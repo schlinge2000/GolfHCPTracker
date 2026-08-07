@@ -1,7 +1,7 @@
 {
   "name": "Wolf Golf",
   "short_name": "Wolf Golf",
-  "description": "Offline nutzbarer Golf Handicap Tracker fuer Runden, Differentials und HCP-Entwicklung.",
+  "description": "Versteh, wie dein Handicap-Index entsteht: Runden erfassen und nach jeder Runde sehen, welche WHS-Regel gegriffen hat. Offline nutzbar.",
   "theme_color": "#1D9E75",
   "background_color": "#f5f4f0",
   "display": "standalone",
@@ -9,6 +9,22 @@
   "lang": "de",
   "scope": "/",
   "start_url": "/",
+  "screenshots": [
+    {
+      "src": "/screenshot-mobile.jpg",
+      "sizes": "585x1170",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Dashboard mit Handicap-Index und Wertungsfenster"
+    },
+    {
+      "src": "/screenshot-dashboard.jpg",
+      "sizes": "2160x1485",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "Dashboard mit Verlauf und Score Differenzialen"
+    }
+  ],
   "icons": [
     {
       "src": "/favicon.svg",
