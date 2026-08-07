@@ -4,7 +4,7 @@ import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline } from "./src/hcpMath";
 import { suggestHoles, normalizeHoles, totalPar, buildAllocations, scoreMatchplay, scoreSkins, scoreNassau, scoreWolf, scoreBingoBangoBongo, nassauSegments, BBB_AWARDS, stablefordFromHoles, playedHoleCount, DEFAULT_HANDICAP_CONFIG } from "./src/gameMath";
-import { fetchUsageStats, isUsagePingEnabled, setUsagePingEnabled, USAGE_ID_RETENTION_DAYS, type UsageStats } from "./src/usagePing";
+import { fetchUsageStats, isUsagePingEnabled, setUsagePingEnabled, whenUsagePingSettled, USAGE_ID_RETENTION_DAYS, type UsageStats } from "./src/usagePing";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -3048,7 +3048,8 @@ function UsageCounterSetting() {
     if (!enabled) { setStats(null); setStatus("off"); return; }
     let cancelled = false;
     setStatus("loading");
-    fetchUsageStats().then(result=>{
+    // Erst den eigenen Ping abwarten, sonst zeigt die Zahl das eigene Geraet nicht.
+    whenUsagePingSettled().then(fetchUsageStats).then(result=>{
       if (cancelled) return;
       setStats(result);
       setStatus(result ? "ready" : "unavailable");

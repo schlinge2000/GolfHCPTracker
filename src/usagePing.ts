@@ -115,6 +115,7 @@ function saveState(state: UsageState) {
 
 let attempts = 0;
 let inFlight = false;
+let pendingPing: Promise<void> | null = null;
 
 async function sendPing() {
   if (typeof fetch !== "function") return;
@@ -153,6 +154,20 @@ async function sendPing() {
   }
 }
 
+function schedulePing() {
+  pendingPing = sendPing();
+  return pendingPing;
+}
+
+/**
+ * Wartet auf einen laufenden Ping. Sonst laedt die Anzeige die Zahlen, waehrend
+ * der eigene Ping noch unterwegs ist, und zaehlt das eigene Geraet nicht mit.
+ * sendPing faengt eigene Fehler ab, das Promise wird also nie rejected.
+ */
+export function whenUsagePingSettled() {
+  return pendingPing ?? Promise.resolve();
+}
+
 export function isUsagePingEnabled() {
   return loadState().enabled;
 }
@@ -161,15 +176,15 @@ export function setUsagePingEnabled(enabled: boolean) {
   const next = usageStateAfterToggle(loadState(), enabled);
   saveState(next);
   // Beim Einschalten direkt mitzaehlen, sonst faellt der heutige Tag hinten runter.
-  if (next.enabled) void sendPing();
+  if (next.enabled) void schedulePing();
   return next.enabled;
 }
 
 export function initUsagePing() {
   if (typeof window === "undefined") return;
-  void sendPing();
+  void schedulePing();
   window.addEventListener("online", () => {
-    void sendPing();
+    void schedulePing();
   });
 }
 
