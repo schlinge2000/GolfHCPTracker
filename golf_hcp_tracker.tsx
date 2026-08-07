@@ -3474,7 +3474,7 @@ function AppFooter({onOpenLegal}) {
         <div>
           <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Wolf Golf Club</div>
           <div style={{fontSize:13,color:"var(--color-text-secondary)",lineHeight:1.6}}>
-            Lokaler Golf-Handicap-Tracker fuer Runden, Was-waere-wenn-Simulationen und golf.de PDF-Import direkt im Browser.
+            Golf mit Freunden: fuenf Spielformate im Flight, dazu der Handicap-Index nach WHS, damit die Vorgabe stimmt. Alles lokal im Browser.
           </div>
         </div>
         <div>
@@ -3507,37 +3507,52 @@ function AppFooter({onOpenLegal}) {
   );
 }
 
-// Die Startseite erzählt zwei Kapitel, die sich gegenseitig tragen: den Index
-// verstehen und aktuell halten – und mit genau diesem Index gegen Freunde spielen.
-const LANDING_THEMES = [
-  {
-    id: "index",
-    tab: "Handicap verstehen",
-    eyebrow: "Kapitel 1 · Verstehen und aktuell halten",
-    title: "Nach der Runde weißt du sofort, wo du stehst.",
-    lead: "Dein Club führt den Index, sagt dir aber weder, warum er sich bewegt hat, noch wann. Wolf Golf schon – in dem Moment, in dem du die Runde einträgst.",
-    points: [
-      ["Neuer Index sofort", "Runde eintragen, Index steht. Kein Warten, bis der Club die Scorekarte verarbeitet hat und golf.de nachzieht."],
-      ["Jede Formel erklärt", "Score Differenzial, Wertungsfenster, Exceptional Score, Anfänger-Bremse – mit Formel und Beispiel, auch wenn du mit WHS noch nie zu tun hattest."],
-      ["Du siehst, was zählt", "Welche vier Runden gerade zählen, welche als nächste aus dem Fenster fällt, und warum eine gute Runde manchmal nichts ändert."],
-      ["Historie in einem Schritt", "Den detaillierten Scoring Record von golf.de als PDF importieren – chronologisch, ohne Abtippen, ohne Upload."],
-    ],
-  },
+// Die Startseite verkauft zuerst das Spiel mit Freunden. Der Handicap-Index ist
+// das Feature darunter: nur mit aktueller Vorgabe ist ein Netto-Match fair und
+// die Spielerkarte hinter dem QR-Code brauchbar. Deshalb steht oben ein Aufmacher
+// mit Slider über beide Seiten, alles Weitere haengt an der Rubriken-Navigation
+// statt an einer langen Scroll-Strecke.
+const LANDING_SLIDES = [
   {
     id: "spiel",
     tab: "Mit Freunden spielen",
-    eyebrow: "Kapitel 2 · Der Wettstreit im Flight",
-    title: "Aus einer Runde zu viert werden fünf Wettkämpfe.",
-    lead: "Dieselben Schläge, mehrere Wetten parallel: Loch für Loch mitgezählt, am Ende eine Abrechnung, über die niemand diskutiert.",
-    points: [
-      ["Fünf Spielformate", "Matchplay, Nassau mit Press, Skins mit Carry-over, Wolf und Bingo Bango Bongo – gleichzeitig auf denselben Scores."],
-      ["Per QR-Code eingeladen", "Mitspieler zeigen ihre Spielerkarte, du scannst sie mit der Kamera – Name und aktueller Index sind da, ohne Abtippen. Auch der Platz samt Scorekarte und das ganze Spiel-Setup wandern so von Gerät zu Gerät."],
-      ["Netto mit der richtigen Vorgabe", "Weil dein Index stimmt, stimmt auch die Vorgabe: Der 28er hat gegen den 12er eine echte Chance statt einer rechnerischen."],
-      ["Abrechnung in Punkten", "Die App zählt Punkte und verrechnet sie auf möglichst wenige Ausgleiche. Was ein Punkt wert ist, macht der Flight unter sich aus."],
-      ["Jeder schreibt mit, alle vergleichen", "Teilt das Spiel, dann läuft es auf jedem Telefon mit identischem Setup. Am Ende haltet ihr die Abrechnungen nebeneinander – Tippfehler fallen sofort auf."],
-      ["Aus dem Spiel wird eine Runde", "Am Ende übernimmst du dein Ergebnis mit einem Klick als HCP-wirksame Runde – zurück zu Kapitel 1."],
+    eyebrow: "Darum geht es",
+    lead: "Matchplay, Nassau mit Press, Skins mit Carry-over, Wolf und Bingo Bango Bongo – gleichzeitig auf denselben Schlägen, Loch für Loch mitgezählt.",
+    highlights: [
+      "Fünf Spielformate parallel auf einer Runde",
+      "Mitspieler per QR-Code eingeladen, ohne Abtippen",
+      "Am Ende eine Abrechnung, über die niemand diskutiert",
     ],
   },
+  {
+    id: "index",
+    tab: "Handicap immer aktuell",
+    eyebrow: "Das Feature darunter",
+    lead: "Damit die Vorgabe stimmt, wenn es zählt: Nach jeder Runde steht dein neuer Index – erklärt, nicht nur ausgerechnet.",
+    highlights: [
+      "Neuer Index sofort nach der Runde",
+      "Auf der Spielerkarte im QR-Code steht ein aktueller Wert",
+      "golf.de-Historie per PDF importiert",
+    ],
+  },
+];
+
+const LANDING_CHAIN = ["Index ist aktuell", "Vorgabe stimmt", "Netto-Match ist fair"];
+
+const LANDING_GAME_POINTS = [
+  ["Fünf Spielformate", "Matchplay, Nassau mit Press, Skins mit Carry-over, Wolf und Bingo Bango Bongo – gleichzeitig auf denselben Scores."],
+  ["Per QR-Code eingeladen", "Mitspieler zeigen ihre Spielerkarte, du scannst sie mit der Kamera – Name und aktueller Index sind da, ohne Abtippen. Auch der Platz samt Scorekarte und das ganze Spiel-Setup wandern so von Gerät zu Gerät."],
+  ["Netto mit der richtigen Vorgabe", "Weil dein Index stimmt, stimmt auch die Vorgabe: Der 28er hat gegen den 12er eine echte Chance statt einer rechnerischen."],
+  ["Abrechnung in Punkten", "Die App zählt Punkte und verrechnet sie auf möglichst wenige Ausgleiche. Was ein Punkt wert ist, macht der Flight unter sich aus."],
+  ["Jeder schreibt mit, alle vergleichen", "Teilt das Spiel, dann läuft es auf jedem Telefon mit identischem Setup. Am Ende haltet ihr die Abrechnungen nebeneinander – Tippfehler fallen sofort auf."],
+  ["Aus dem Spiel wird eine Runde", "Am Ende übernimmst du dein Ergebnis mit einem Klick als HCP-wirksame Runde."],
+];
+
+const LANDING_INDEX_POINTS = [
+  ["Neuer Index sofort", "Runde eintragen, Index steht. Kein Warten, bis der Club die Scorekarte verarbeitet hat und golf.de nachzieht."],
+  ["Jede Formel erklärt", "Score Differenzial, Wertungsfenster, Exceptional Score, Anfänger-Bremse – mit Formel und Beispiel, auch wenn du mit WHS noch nie zu tun hattest."],
+  ["Du siehst, was zählt", "Welche Runden gerade zählen, welche als nächste aus dem Fenster fällt, und warum eine gute Runde manchmal nichts ändert."],
+  ["Historie in einem Schritt", "Den detaillierten Scoring Record von golf.de als PDF importieren – chronologisch, ohne Abtippen, ohne Upload."],
 ];
 
 const LANDING_DETAILS = [
@@ -3561,16 +3576,16 @@ const LANDING_DETAILS = [
 
 const LANDING_FAQ = [
   {
+    q: "Spielen wir damit um Geld?",
+    a: "Das entscheidet ihr, nicht die App. Sie zählt ausschließlich Punkte und rechnet nichts in Geld um – was ein Punkt am Ende wert ist, vereinbart ihr im Flight. Es fließt kein Geld über die App, sie verwahrt und überweist nichts.",
+  },
+  {
     q: "Ist das mein offizielles Handicap?",
     a: "Nein. Die App rechnet nach den WHS-Regeln des DGV, verbindlich bleibt der Index, den dein Heimatclub führt. Der Vorteil ist der Zeitpunkt: Du siehst den neuen Wert direkt nach der Runde, während der offizielle erst nach der Verarbeitung im Club bei golf.de erscheint. Der berechnete Wert entspricht dem, was golf.de später als „Berechneter HCPI“ ausweist.",
   },
   {
     q: "Ich fange gerade mit Golf an – hilft mir das?",
     a: "Dafür ist die App vor allem gedacht. Am Anfang bewegt sich der Index in Sprüngen, die von außen willkürlich wirken: die Anfänger-Bremse ab 26,9, die Anpassung bei wenigen Runden, Ausnahmerunden. Die App zeigt nach jeder Runde, welche dieser Regeln gegriffen hat – und im Bereich HCP-Info steht jede Formel mit Beispiel.",
-  },
-  {
-    q: "Spielen wir damit um Geld?",
-    a: "Das entscheidet ihr, nicht die App. Sie zählt ausschließlich Punkte und rechnet nichts in Geld um – was ein Punkt am Ende wert ist, vereinbart ihr im Flight. Es fließt kein Geld über die App, sie verwahrt und überweist nichts.",
   },
   {
     q: "Kann ich meine Historie aus golf.de übernehmen?",
@@ -3582,14 +3597,86 @@ const LANDING_FAQ = [
   },
 ];
 
+const LANDING_PANELS = [
+  { id:"starten", label:"Starten" },
+  { id:"spiele", label:"Spiele" },
+  { id:"handicap", label:"Handicap" },
+  { id:"fragen", label:"Fragen" },
+];
+
+// Aufmacher-Bild: dieselbe Bildmarke wie im App-Icon (Fahne mit Wolfskopf),
+// nur gross und auf den Platz gestellt. Die Fahne selbst kommt aus WolfFlagArt,
+// damit die Geometrie an genau einer Stelle steht.
+function HeroScene({ratio="4 / 3"}) {
+  return (
+    <div style={{
+      width:"100%",aspectRatio:ratio,borderRadius:"var(--border-radius-lg)",overflow:"hidden",
+      border:"1px solid rgba(255,255,255,0.16)",boxShadow:"0 18px 40px rgba(4,20,14,0.34)",
+    }}>
+      <svg viewBox="0 0 320 180" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Der Wolf-Golf-Wimpel auf dem Grün">
+        <defs>
+          <linearGradient id="hero-sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#0A3F30"/>
+            <stop offset="100%" stopColor="#1E8965"/>
+          </linearGradient>
+          <linearGradient id="hero-turf" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#33BE8E"/>
+            <stop offset="100%" stopColor="#0F5C46"/>
+          </linearGradient>
+        </defs>
+        <rect width="320" height="180" fill="url(#hero-sky)"/>
+        <circle cx="268" cy="34" r="24" fill="#F7E3B6" opacity="0.2"/>
+        {/* Fairway-Baender: zwei Kuppen, damit Tiefe entsteht */}
+        <path d="M0 96 C 66 80, 122 104, 184 94 C 238 85, 286 98, 320 90 L 320 180 L 0 180 Z" fill="#12654E" opacity="0.85"/>
+        <path d="M0 124 C 78 108, 146 134, 214 122 C 258 114, 294 124, 320 118 L 320 180 L 0 180 Z" fill="url(#hero-turf)"/>
+        <ellipse cx="170" cy="152" rx="104" ry="24" fill="#3FCE9B" opacity="0.34"/>
+        <ellipse cx="214" cy="150" rx="8" ry="3.4" fill="#07271D" opacity="0.9"/>
+        <ellipse cx="150" cy="150" rx="14" ry="4" fill="#07271D" opacity="0.24"/>
+        <g transform="translate(104 16) scale(1.62)">
+          <WolfFlagArt/>
+        </g>
+        <circle cx="238" cy="146" r="6.5" fill="#fff"/>
+        <circle cx="236" cy="144" r="4.6" fill="#EDF6F1" opacity="0.9"/>
+      </svg>
+    </div>
+  );
+}
+
 function LandingPage({profile, onSave, onOpenLegal}) {
-  const startRef = useRef(null);
-  const calcRef = useRef(null);
-  const scrollTo = ref => ref.current?.scrollIntoView({behavior:"smooth", block:"start"});
-  // Der Desktop-Screenshot ist auf Telefonbreite nicht mehr lesbar, dort zeigt der
-  // Aufmacher die Mobilansicht.
+  // Der Desktop-Screenshot ist auf Telefonbreite nicht mehr lesbar, dort zeigen
+  // die Rubriken die Mobilansicht.
   const showDesktopShot = useMediaQuery("(min-width: 760px)");
-  const [themeIndex, setThemeIndex] = useState(0);
+  const reduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const [slide, setSlide] = useState(0);
+  const [autoPlay, setAutoPlay] = useState(true);
+  const [panel, setPanel] = useState("starten");
+  const panelRef = useRef(null);
+  const touchStartX = useRef(null);
+
+  // Der Slider laeuft von allein, damit beide Seiten ohne Zutun zu sehen sind –
+  // und haelt an, sobald jemand selbst blaettert.
+  useEffect(()=>{
+    if (!autoPlay || reduceMotion) return;
+    const timer = setInterval(()=>setSlide(prev=>(prev+1)%LANDING_SLIDES.length), 7000);
+    return ()=>clearInterval(timer);
+  },[autoPlay, reduceMotion]);
+
+  const showSlide = index => {
+    setAutoPlay(false);
+    setSlide((index+LANDING_SLIDES.length)%LANDING_SLIDES.length);
+  };
+  const onTouchStart = e => { touchStartX.current = e.touches[0]?.clientX ?? null; };
+  const onTouchEnd = e => {
+    if (touchStartX.current===null) return;
+    const delta = (e.changedTouches[0]?.clientX ?? 0) - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(delta) < 44) return;
+    showSlide(slide + (delta<0 ? 1 : -1));
+  };
+  const openPanel = id => {
+    setPanel(id);
+    requestAnimationFrame(()=>panelRef.current?.scrollIntoView({behavior:reduceMotion?"auto":"smooth", block:"start"}));
+  };
 
   const primaryButtonStyle: CSSProperties = {
     padding:"13px 22px", borderRadius:"var(--border-radius-md)", border:"none",
@@ -3606,11 +3693,6 @@ function LandingPage({profile, onSave, onOpenLegal}) {
     background:"linear-gradient(135deg, #1D9E75 0%, #14684f 100%)", color:"#fff",
     fontFamily:"var(--font-sans)", fontSize:15, fontWeight:700, cursor:"pointer",
     boxShadow:"0 10px 22px rgba(6,52,38,0.28)",
-  };
-  const heroChipStyle: CSSProperties = {
-    display:"inline-flex", alignItems:"center", gap:7, padding:"7px 12px", borderRadius:999,
-    background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.16)",
-    fontSize:13, fontWeight:600, color:"rgba(255,255,255,0.92)",
   };
   const eyebrowStyle: CSSProperties = {
     fontSize:12, fontWeight:700, letterSpacing:"0.14em", textTransform:"uppercase",
@@ -3636,221 +3718,125 @@ function LandingPage({profile, onSave, onOpenLegal}) {
     />
   );
 
-  return (
-    <div style={{maxWidth:1080,margin:"0 auto",padding:appShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
-      <header style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-        <BrandMark size={38}/>
-        <div style={{minWidth:0}}>
-          <div style={{fontSize:16,fontWeight:650,lineHeight:1.2}}>Wolf Golf Club</div>
-          <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Handicap verstehen. Und miteinander spielen.</div>
+  const pointList = points => (
+    <div style={{display:"grid",gap:12}}>
+      {points.map(([title, text])=>(
+        <div key={title} style={{display:"flex",gap:11,alignItems:"flex-start"}}>
+          <span style={{color:"#1D9E75",marginTop:3}}>{check}</span>
+          <div>
+            <div style={{fontSize:15,fontWeight:650,marginBottom:2}}>{title}</div>
+            <div style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)"}}>{text}</div>
+          </div>
         </div>
-        <button type="button" onClick={()=>scrollTo(startRef)} style={{...greenButtonStyle,marginLeft:"auto",padding:"10px 18px",fontSize:14}}>
-          Kostenlos starten
-        </button>
-      </header>
+      ))}
+    </div>
+  );
 
-      <section style={{...cardStyle,padding:"clamp(24px, 4vw, 40px)",marginBottom:16,background:"linear-gradient(145deg, rgba(16,42,33,0.98) 0%, rgba(18,57,44,0.96) 46%, rgba(29,158,117,0.84) 100%)",color:"#fff",position:"relative",overflow:"hidden"}}>
-        <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 84% 12%, rgba(255,255,255,0.22), transparent 26%), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",backgroundSize:"auto, 28px 28px",opacity:0.35,pointerEvents:"none"}}/>
-        <div style={{position:"relative",maxWidth:720}}>
-          <div style={{...eyebrowStyle,color:"rgba(255,255,255,0.72)"}}>Verstehen · Aktuell halten · Mitspielen</div>
-          <h1 style={{fontSize:"clamp(30px, 5vw, 46px)",lineHeight:1.06,fontWeight:700,margin:"0 0 14px"}}>
-            Dein Handicap verstehen. Aktuell halten. Und damit spielen.
-          </h1>
-          <p style={{fontSize:"clamp(16px, 2vw, 18px)",lineHeight:1.6,color:"rgba(255,255,255,0.82)",margin:"0 0 22px",maxWidth:640}}>
-            Nach jeder Runde steht dein neuer Index – erklärt, nicht nur ausgerechnet. Und weil er stimmt, wird die
-            nächste Runde mit Freunden zum echten Wettkampf: Matchplay, Nassau, Skins, Wolf und Bingo Bango Bongo,
-            alle mit der richtigen Vorgabe und den Mitspielern per QR-Code eingeladen. Kein Verein, kein Beitrag –
-            trotzdem ein Club.
+  const panels = {
+    starten: (
+      <div style={{...cardStyle,padding:"clamp(22px, 3vw, 32px)",display:"flex",gap:28,flexWrap:"wrap"}}>
+        <div style={{flex:"1 1 300px",minWidth:0}}>
+          <div style={eyebrowStyle}>Jetzt starten</div>
+          <h2 style={sectionHeadingStyle}>In 30 Sekunden startklar.</h2>
+          <p style={{...bodyTextStyle,marginBottom:14}}>
+            Name und Start-HCP – mehr braucht die App nicht. Wenn du dein Handicap nicht kennst, lass die 54 stehen:
+            Sie ist der WHS-Startwert und wird mit deinen ersten Runden automatisch besser.
           </p>
-          <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:22}}>
-            <button type="button" onClick={()=>scrollTo(startRef)} style={primaryButtonStyle}>Kostenlos starten</button>
-            <button type="button" onClick={()=>scrollTo(calcRef)} style={secondaryButtonStyle}>So wird gerechnet</button>
-          </div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {["Neuer Index sofort nach der Runde","Fünf Spielformate für den Flight","Offline auf der Runde","0 €, ohne Konto"].map(text=>(
-              <span key={text} style={heroChipStyle}>{check}{text}</span>
+          <div style={{display:"grid",gap:8}}>
+            {["Kein Konto, keine E-Mail-Adresse, kein Passwort","Alles bleibt auf diesem Gerät gespeichert","Historie aus golf.de kannst du direkt danach importieren"].map(text=>(
+              <div key={text} style={{display:"flex",gap:9,alignItems:"flex-start",fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)"}}>
+                <span style={{color:"#1D9E75",marginTop:3}}>{check}</span>
+                <span>{text}</span>
+              </div>
             ))}
           </div>
         </div>
-      </section>
-
-      <figure style={{margin:"0 0 26px"}}>
-        {showDesktopShot ? (
-          <div style={{...cardStyle,overflow:"hidden",padding:0}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:"linear-gradient(180deg, rgba(24,44,36,0.96) 0%, rgba(17,34,28,0.96) 100%)"}}>
-              {["#E8695F","#E8B85F","#63C08A"].map(color=>(
-                <span key={color} style={{width:10,height:10,borderRadius:999,background:color,flexShrink:0}}/>
-              ))}
-              <span style={{marginLeft:8,padding:"3px 12px",borderRadius:999,background:"rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.68)",fontSize:12,fontWeight:600}}>
-                {LEGAL.site.domain}
-              </span>
-            </div>
-            <img
-              src="/screenshot-dashboard.jpg"
-              width={1440}
-              height={990}
-              alt="Dashboard von Wolf Golf mit Wertungsfenster, Score Differenzialen und HCP-Verlauf"
-              style={{display:"block",width:"100%",height:"auto"}}
-            />
-          </div>
-        ) : (
-          <div style={{display:"grid",placeItems:"center"}}>{mobileShot(300)}</div>
+        <div style={{flex:"1 1 300px",minWidth:"min(100%, 300px)"}}>
+          <ProfileForm profile={profile} onSave={onSave} isSetup/>
+        </div>
+      </div>
+    ),
+    spiele: (
+      <div style={{...cardStyle,padding:"clamp(22px, 3vw, 32px)",display:"flex",gap:28,flexWrap:"wrap"}}>
+        <div style={{flex:"1 1 340px",minWidth:0}}>
+          <div style={eyebrowStyle}>Der Wettstreit im Flight</div>
+          <h2 style={sectionHeadingStyle}>Aus einer Runde zu viert werden fünf Wettkämpfe.</h2>
+          <p style={{...bodyTextStyle,marginBottom:16}}>
+            Dieselben Schläge, mehrere Wetten parallel: Loch für Loch mitgezählt, am Ende eine Abrechnung, über die
+            niemand diskutiert.
+          </p>
+          {pointList(LANDING_GAME_POINTS)}
+        </div>
+        {showDesktopShot && (
+          <div style={{flex:"0 1 230px",display:"grid",placeItems:"start center",minWidth:0}}>{mobileShot(220)}</div>
         )}
-        <figcaption style={{fontSize:13,color:"var(--color-text-secondary)",marginTop:10,textAlign:"center"}}>
-          {showDesktopShot ? "Dashboard mit Beispieldaten: aktueller Index, Wertungsfenster und Verlauf auf einen Blick." : "Beispieldaten: aktueller Index, Kennzahlen und Wertungsfenster auf dem Telefon."}
-        </figcaption>
-      </figure>
-
-      <section style={{marginBottom:14}}>
-        <div style={eyebrowStyle}>Zwei Seiten, ein Handicap</div>
-        <h2 style={{...sectionHeadingStyle,marginBottom:16}}>Wechsle die Perspektive.</h2>
-
-        <div role="tablist" aria-label="Themen" style={{
-          display:"inline-flex",position:"relative",padding:4,marginBottom:14,borderRadius:999,
-          background:"var(--color-background-secondary)",border:"1px solid var(--color-border-tertiary)",
-          maxWidth:"100%",boxSizing:"border-box",
-        }}>
-          <span aria-hidden="true" style={{
-            position:"absolute",top:4,bottom:4,left:4,width:"calc(50% - 4px)",borderRadius:999,
-            background:"linear-gradient(135deg, #1D9E75 0%, #14684f 100%)",
-            boxShadow:"0 8px 18px rgba(6,52,38,0.28)",
-            transform:`translateX(${themeIndex * 100}%)`,
-            transition:"transform 320ms cubic-bezier(0.22,0.61,0.36,1)",
-          }}/>
-          {LANDING_THEMES.map((theme, index)=>(
-            <button
-              key={theme.id}
-              type="button"
-              role="tab"
-              id={`landing-tab-${theme.id}`}
-              aria-selected={themeIndex===index}
-              aria-controls={`landing-panel-${theme.id}`}
-              onClick={()=>setThemeIndex(index)}
-              style={{
-                position:"relative",flex:"1 1 0",minWidth:0,padding:"11px 18px",borderRadius:999,border:"none",
-                background:"transparent",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14,
-                fontWeight:themeIndex===index?700:600,
-                color:themeIndex===index?"#fff":"var(--color-text-secondary)",
-                transition:"color 220ms ease",whiteSpace:"nowrap",
-              }}>
-              {theme.tab}
-            </button>
-          ))}
+      </div>
+    ),
+    handicap: (
+      <div style={{display:"grid",gap:16}}>
+        <div style={{...cardStyle,padding:"clamp(22px, 3vw, 32px)"}}>
+          <div style={eyebrowStyle}>Das Feature unter den Spielen</div>
+          <h2 style={sectionHeadingStyle}>Nach der Runde weißt du sofort, wo du stehst.</h2>
+          <p style={{...bodyTextStyle,marginBottom:16}}>
+            Dein Club führt den Index, sagt dir aber weder, warum er sich bewegt hat, noch wann. Wolf Golf schon – in
+            dem Moment, in dem du die Runde einträgst. Und weil er stimmt, stimmt die Vorgabe im nächsten Match.
+          </p>
+          {pointList(LANDING_INDEX_POINTS)}
         </div>
-
-        <div style={{overflow:"hidden",borderRadius:"var(--border-radius-lg)"}}>
-          <div style={{
-            display:"flex",width:"200%",
-            transform:`translateX(-${themeIndex * 50}%)`,
-            transition:"transform 380ms cubic-bezier(0.22,0.61,0.36,1)",
-          }}>
-            {LANDING_THEMES.map((theme, index)=>(
-              <div
-                key={theme.id}
-                role="tabpanel"
-                id={`landing-panel-${theme.id}`}
-                aria-labelledby={`landing-tab-${theme.id}`}
-                aria-hidden={themeIndex!==index}
-                style={{width:"50%",flexShrink:0,boxSizing:"border-box",padding:themeIndex===index?0:"0 0 0 0"}}>
-                <div style={{...cardStyle,padding:"clamp(20px, 3vw, 30px)",display:"flex",gap:26,flexWrap:"wrap",alignItems:"flex-start",height:"100%",boxSizing:"border-box"}}>
-                  <div style={{flex:"1 1 340px",minWidth:0}}>
-                    <div style={eyebrowStyle}>{theme.eyebrow}</div>
-                    <h3 style={{...sectionHeadingStyle,fontSize:23}}>{theme.title}</h3>
-                    <p style={{...bodyTextStyle,marginBottom:16}}>{theme.lead}</p>
-                    <div style={{display:"grid",gap:12}}>
-                      {theme.points.map(([title, text])=>(
-                        <div key={title} style={{display:"flex",gap:11,alignItems:"flex-start"}}>
-                          <span style={{color:"#1D9E75",marginTop:3}}>{check}</span>
-                          <div>
-                            <div style={{fontSize:15,fontWeight:650,marginBottom:2}}>{title}</div>
-                            <div style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)"}}>{text}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  {showDesktopShot && theme.id==="spiel" && (
-                    <div style={{flex:"0 1 230px",display:"grid",placeItems:"center",minWidth:0}}>
-                      {mobileShot(220)}
-                    </div>
-                  )}
-                  {showDesktopShot && theme.id==="index" && (
-                    <div style={{flex:"0 1 250px",minWidth:0}}>
-                      <div style={{...subtleCardStyle,padding:"16px 18px"}}>
-                        <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#1D9E75",marginBottom:10}}>So liest sich eine Runde</div>
-                        <div style={{fontSize:13,lineHeight:1.7,color:"var(--color-text-secondary)"}}>
-                          GC Aachen Seffent, 18 Loch<br/>
-                          GBE 91 · CR 70,4 · SR 124
-                        </div>
-                        <div style={{background:"#F5F4F0",borderRadius:"var(--border-radius-md)",padding:"10px 12px",fontFamily:"monospace",fontSize:12.5,lineHeight:1.6,margin:"10px 0",color:"#111"}}>
-                          (91 − 70,4) × 113 ÷ 124<br/>= 18,8
-                        </div>
-                        <div style={{fontSize:13,lineHeight:1.6,color:"var(--color-text-secondary)"}}>
-                          Dein bestes Differenzial – und damit eine der vier Runden, die deinen Index gerade tragen.
-                        </div>
-                      </div>
-                    </div>
-                  )}
+        <div style={{...cardStyle,padding:"clamp(22px, 3vw, 32px)",background:"linear-gradient(160deg, rgba(20,46,37,0.97) 0%, rgba(18,57,44,0.95) 100%)",color:"#fff"}}>
+          <div style={{...eyebrowStyle,color:"rgba(255,255,255,0.7)"}}>Das Regelwerk hinter der Zahl</div>
+          <h2 style={{...sectionHeadingStyle,color:"#fff",maxWidth:640}}>WHS ist mehr als ein Mittelwert.</h2>
+          <p style={{fontSize:15,lineHeight:1.65,color:"rgba(255,255,255,0.78)",margin:"0 0 20px",maxWidth:660}}>
+            Ein Durchschnitt über die besten Runden ist schnell erklärt. Die Regeln, die deinen Index tatsächlich
+            bewegen, stecken in den Sonderfällen – und die sind der Grund, warum das Handicap besonders am Anfang
+            unübersichtlich wirkt. Wolf Golf rechnet sie mit und schreibt dazu, was passiert ist.
+          </p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(270px, 1fr))",gap:14,marginBottom:18}}>
+            {LANDING_DETAILS.map(detail=>(
+              <div key={detail.title} style={{padding:"16px 18px",borderRadius:"var(--border-radius-md)",background:"rgba(255,255,255,0.09)",border:"1px solid rgba(255,255,255,0.14)"}}>
+                <div style={{display:"flex",gap:9,alignItems:"center",marginBottom:7}}>
+                  <span style={{color:"#7BE0B4",display:"grid",placeItems:"center"}}>{check}</span>
+                  <span style={{fontSize:16,fontWeight:650}}>{detail.title}</span>
                 </div>
+                <div style={{fontSize:14,lineHeight:1.6,color:"rgba(255,255,255,0.78)"}}>{detail.text}</div>
               </div>
             ))}
           </div>
+          <div style={{padding:"14px 16px",borderRadius:"var(--border-radius-md)",background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.12)",fontSize:14,lineHeight:1.65,color:"rgba(255,255,255,0.8)"}}>
+            <strong style={{color:"#fff",fontWeight:650}}>Und was die App nicht kann:</strong> Die tagesbezogene
+            Platzverhältnis-Korrektur (PCC) rechnet sie mit 0, weil sie die Tageswerte nicht kennt. Verbindlich bleibt
+            immer der Index, den dein Club über den DGV führt – die App ist dein Zweitblick darauf, keine Ersatz-Verwaltung.
+          </div>
         </div>
-      </section>
-
-      <section style={{...cardStyle,padding:"clamp(20px, 3vw, 28px)",marginBottom:26,background:"linear-gradient(180deg, rgba(240,249,245,0.96) 0%, rgba(255,255,255,0.96) 100%)"}}>
-        <div style={eyebrowStyle}>Warum beides zusammengehört</div>
-        <p style={{fontSize:"clamp(16px, 1.8vw, 18px)",lineHeight:1.6,margin:"0 0 10px",maxWidth:760,fontWeight:500}}>
-          Ein Netto-Spiel ist nur so fair wie die Vorgabe, die dahintersteckt. Wer seinen Index aktuell hält, spielt
-          mit der richtigen – und erst dann ist ein Match zwischen 12 und 28 spannend statt vorentschieden.
-        </p>
-        <p style={{...bodyTextStyle,marginBottom:16,maxWidth:760}}>
-          Deshalb Wolf Golf Club: nicht als Verwaltung für deinen Index, sondern als Ort für die Runden, die ihr
-          miteinander spielt.
-        </p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(190px, 1fr))",gap:12}}>
-          {[
-            ["Runde eintragen","Von Hand oder aus dem golf.de-PDF."],
-            ["Index stimmt","Sofort neu gerechnet, nicht erst nach der Clubverwaltung."],
-            ["Vorgabe stimmt","Course Handicap je Platz und Abschlag."],
-            ["Match wird fair","Und die Runde mit Freunden interessant."],
-          ].map(([title, text], i)=>(
-            <div key={title} style={{...subtleCardStyle,padding:"14px 16px"}}>
-              <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",color:"#1D9E75",marginBottom:6}}>SCHRITT {i+1}</div>
-              <div style={{fontSize:15,fontWeight:650,marginBottom:4}}>{title}</div>
-              <div style={{fontSize:13,lineHeight:1.55,color:"var(--color-text-secondary)"}}>{text}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section ref={calcRef} style={{...cardStyle,padding:"clamp(22px, 3vw, 32px)",marginBottom:26,background:"linear-gradient(160deg, rgba(20,46,37,0.97) 0%, rgba(18,57,44,0.95) 100%)",color:"#fff"}}>
-        <div style={{...eyebrowStyle,color:"rgba(255,255,255,0.7)"}}>Das Regelwerk hinter der Zahl</div>
-        <h2 style={{...sectionHeadingStyle,color:"#fff",maxWidth:640}}>WHS ist mehr als ein Mittelwert.</h2>
-        <p style={{fontSize:15,lineHeight:1.65,color:"rgba(255,255,255,0.78)",margin:"0 0 20px",maxWidth:660}}>
-          Ein Durchschnitt über die besten Runden ist schnell erklärt. Die Regeln, die deinen Index tatsächlich
-          bewegen, stecken in den Sonderfällen – und die sind der Grund, warum das Handicap besonders am Anfang
-          unübersichtlich wirkt. Wolf Golf rechnet sie mit und schreibt dazu, was passiert ist.
-        </p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(270px, 1fr))",gap:14,marginBottom:18}}>
-          {LANDING_DETAILS.map(detail=>(
-            <div key={detail.title} style={{padding:"16px 18px",borderRadius:"var(--border-radius-md)",background:"rgba(255,255,255,0.09)",border:"1px solid rgba(255,255,255,0.14)"}}>
-              <div style={{display:"flex",gap:9,alignItems:"center",marginBottom:7}}>
-                <span style={{color:"#7BE0B4",display:"grid",placeItems:"center"}}>{check}</span>
-                <span style={{fontSize:16,fontWeight:650}}>{detail.title}</span>
+        {showDesktopShot && (
+          <figure style={{margin:0}}>
+            <div style={{...cardStyle,overflow:"hidden",padding:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:"linear-gradient(180deg, rgba(24,44,36,0.96) 0%, rgba(17,34,28,0.96) 100%)"}}>
+                {["#E8695F","#E8B85F","#63C08A"].map(color=>(
+                  <span key={color} style={{width:10,height:10,borderRadius:999,background:color,flexShrink:0}}/>
+                ))}
+                <span style={{marginLeft:8,padding:"3px 12px",borderRadius:999,background:"rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.68)",fontSize:12,fontWeight:600}}>
+                  {LEGAL.site.domain}
+                </span>
               </div>
-              <div style={{fontSize:14,lineHeight:1.6,color:"rgba(255,255,255,0.78)"}}>{detail.text}</div>
+              <img
+                src="/screenshot-dashboard.jpg"
+                width={1440}
+                height={990}
+                loading="lazy"
+                alt="Dashboard von Wolf Golf mit Wertungsfenster, Score Differenzialen und HCP-Verlauf"
+                style={{display:"block",width:"100%",height:"auto"}}
+              />
             </div>
-          ))}
-        </div>
-        <div style={{padding:"14px 16px",borderRadius:"var(--border-radius-md)",background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.12)",fontSize:14,lineHeight:1.65,color:"rgba(255,255,255,0.8)"}}>
-          <strong style={{color:"#fff",fontWeight:650}}>Und was die App nicht kann:</strong> Die tagesbezogene
-          Platzverhältnis-Korrektur (PCC) rechnet sie mit 0, weil sie die Tageswerte nicht kennt. Verbindlich bleibt
-          immer der Index, den dein Club über den DGV führt – die App ist dein Zweitblick darauf, keine Ersatz-Verwaltung.
-        </div>
-      </section>
-
-      <section style={{marginBottom:26}}>
+            <figcaption style={{fontSize:13,color:"var(--color-text-secondary)",marginTop:10,textAlign:"center"}}>
+              Dashboard mit Beispieldaten: aktueller Index, Wertungsfenster und Verlauf auf einen Blick.
+            </figcaption>
+          </figure>
+        )}
+      </div>
+    ),
+    fragen: (
+      <div style={{...cardStyle,padding:"clamp(22px, 3vw, 32px)"}}>
         <div style={eyebrowStyle}>Häufige Fragen</div>
         <h2 style={{...sectionHeadingStyle,marginBottom:14}}>Kurz beantwortet.</h2>
         <div style={{display:"grid",gap:10}}>
@@ -3861,31 +3847,169 @@ function LandingPage({profile, onSave, onOpenLegal}) {
             </details>
           ))}
         </div>
-      </section>
+      </div>
+    ),
+  };
 
-      <section ref={startRef} style={{marginBottom:26,scrollMarginTop:20}}>
-        <div style={{...cardStyle,padding:"clamp(22px, 3vw, 32px)",display:"flex",gap:28,flexWrap:"wrap"}}>
-          <div style={{flex:"1 1 300px",minWidth:0}}>
-            <div style={eyebrowStyle}>Jetzt starten</div>
-            <h2 style={sectionHeadingStyle}>In 30 Sekunden startklar.</h2>
-            <p style={{...bodyTextStyle,marginBottom:14}}>
-              Name und Start-HCP – mehr braucht die App nicht. Wenn du dein Handicap nicht kennst, lass die 54 stehen:
-              Sie ist der WHS-Startwert und wird mit deinen ersten Runden automatisch besser.
-            </p>
-            <div style={{display:"grid",gap:8}}>
-              {["Kein Konto, keine E-Mail-Adresse, kein Passwort","Alles bleibt auf diesem Gerät gespeichert","Historie aus golf.de kannst du direkt danach importieren"].map(text=>(
-                <div key={text} style={{display:"flex",gap:9,alignItems:"flex-start",fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)"}}>
-                  <span style={{color:"#1D9E75",marginTop:3}}>{check}</span>
+  const slideDeck = (
+    // Kein Eckenradius am Rahmen: der wuerde zusammen mit overflow:hidden den
+    // ersten Buchstaben der Folie anschneiden.
+    <div
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      style={{overflow:"hidden",marginBottom:18}}>
+      <div style={{
+        display:"flex",width:`${LANDING_SLIDES.length*100}%`,
+        transform:`translateX(-${slide * (100/LANDING_SLIDES.length)}%)`,
+        transition:reduceMotion?"none":"transform 420ms cubic-bezier(0.22,0.61,0.36,1)",
+      }}>
+        {LANDING_SLIDES.map((item, index)=>(
+          <div
+            key={item.id}
+            role="tabpanel"
+            id={`hero-panel-${item.id}`}
+            aria-labelledby={`hero-tab-${item.id}`}
+            aria-hidden={slide!==index}
+            style={{width:`${100/LANDING_SLIDES.length}%`,flexShrink:0,boxSizing:"border-box",paddingRight:2}}>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:"rgba(255,255,255,0.6)",marginBottom:8}}>{item.eyebrow}</div>
+            <p style={{fontSize:"clamp(15px, 1.9vw, 17px)",lineHeight:1.6,color:"rgba(255,255,255,0.86)",margin:"0 0 14px"}}>{item.lead}</p>
+            <div style={{display:"grid",gap:7}}>
+              {item.highlights.map(text=>(
+                <div key={text} style={{display:"flex",gap:9,alignItems:"flex-start",fontSize:14,lineHeight:1.5,color:"rgba(255,255,255,0.92)"}}>
+                  <span style={{color:"#7BE0B4",marginTop:2}}>{check}</span>
                   <span>{text}</span>
                 </div>
               ))}
             </div>
           </div>
-          <div style={{flex:"1 1 300px",minWidth:"min(100%, 300px)"}}>
-            <ProfileForm profile={profile} onSave={onSave} isSetup/>
-          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{maxWidth:1080,margin:"0 auto",padding:appShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
+      <header style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+        <BrandMark size={38}/>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:16,fontWeight:650,lineHeight:1.2}}>Wolf Golf Club</div>
+          <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Spielt gegeneinander. Mit der richtigen Vorgabe.</div>
         </div>
+        <nav aria-label="Bereiche" style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto",alignItems:"center"}}>
+          {LANDING_PANELS.map(item=>(
+            <button
+              key={item.id}
+              type="button"
+              aria-current={panel===item.id ? "true" : undefined}
+              onClick={()=>openPanel(item.id)}
+              style={{
+                padding:"8px 14px",borderRadius:999,cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:13,
+                fontWeight:panel===item.id?700:600,
+                border:`1px solid ${panel===item.id?"transparent":"var(--color-border-tertiary)"}`,
+                background:panel===item.id?"linear-gradient(135deg, #1D9E75 0%, #14684f 100%)":"rgba(255,255,255,0.72)",
+                color:panel===item.id?"#fff":"var(--color-text-secondary)",
+              }}>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </header>
+
+      <section style={{...cardStyle,padding:"clamp(22px, 3.4vw, 36px)",marginBottom:18,background:"linear-gradient(145deg, rgba(16,42,33,0.98) 0%, rgba(18,57,44,0.96) 46%, rgba(29,158,117,0.84) 100%)",color:"#fff",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 84% 12%, rgba(255,255,255,0.2), transparent 26%), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",backgroundSize:"auto, 28px 28px",opacity:0.32,pointerEvents:"none"}}/>
+        <div style={{position:"relative",display:"flex",gap:"clamp(20px, 3vw, 34px)",flexWrap:"wrap",alignItems:"flex-start"}}>
+          <div style={{flex:"1 1 380px",minWidth:0}}>
+            <div style={{...eyebrowStyle,color:"rgba(255,255,255,0.68)"}}>Wolf Golf Club</div>
+            <h1 style={{fontSize:"clamp(29px, 4.6vw, 44px)",lineHeight:1.06,fontWeight:700,margin:"0 0 12px"}}>
+              Spielt gegeneinander. Golf wird lustiger als je zuvor.
+            </h1>
+            {!showDesktopShot && <div style={{margin:"0 0 16px"}}><HeroScene ratio="16 / 9"/></div>}
+
+            {/* Grid statt inline-flex: ein baseline-ausgerichteter inline-flex-Kasten
+                laeuft aus seiner Zeile heraus und schiebt sich ueber den Folientext. */}
+            <div role="tablist" aria-label="Beide Seiten" style={{display:"grid",gridTemplateColumns:`repeat(${LANDING_SLIDES.length}, minmax(0, 1fr))`,gap:4,padding:4,marginBottom:14,borderRadius:999,background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.18)",width:showDesktopShot?"fit-content":"100%",maxWidth:"100%",boxSizing:"border-box"}}>
+              {LANDING_SLIDES.map((item, index)=>(
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  id={`hero-tab-${item.id}`}
+                  aria-selected={slide===index}
+                  aria-controls={`hero-panel-${item.id}`}
+                  onClick={()=>showSlide(index)}
+                  style={{
+                    padding:"9px 16px",borderRadius:999,border:"none",cursor:"pointer",fontFamily:"var(--font-sans)",
+                    fontSize:13.5,fontWeight:slide===index?700:600,
+                    background:slide===index?"#fff":"transparent",
+                    color:slide===index?"#0F3A2C":"rgba(255,255,255,0.82)",
+                    transition:reduceMotion?"none":"background 220ms ease, color 220ms ease",
+                  }}>
+                  {item.tab}
+                </button>
+              ))}
+            </div>
+
+            {slideDeck}
+
+            {/* Beide Seiten in einer Zeile zusammengebunden – bleibt stehen, egal
+                welche Folie laeuft, und bricht ohne einzelne Pfeile am Zeilenanfang. */}
+            <div style={{borderLeft:"2px solid rgba(123,224,180,0.7)",paddingLeft:12,marginBottom:18,fontSize:13.5,lineHeight:1.6,color:"rgba(255,255,255,0.74)"}}>
+              {LANDING_CHAIN.map((text, index)=>(
+                <span key={text}>
+                  {index>0 && <span aria-hidden="true" style={{padding:"0 6px"}}>→</span>}
+                  <strong style={{color:"#fff",fontWeight:650}}>{text}</strong>
+                </span>
+              ))}
+            </div>
+
+            <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
+              {/* Auf dem Telefon teilen sich beide Knoepfe eine Zeile statt untereinander zu stapeln. */}
+              <button type="button" onClick={()=>openPanel("starten")} style={{...primaryButtonStyle,flex:showDesktopShot?"0 0 auto":"1 1 150px"}}>Kostenlos starten</button>
+              <button type="button" onClick={()=>openPanel("spiele")} style={{...secondaryButtonStyle,flex:showDesktopShot?"0 0 auto":"1 1 150px"}}>Alle Spielformate</button>
+            </div>
+            <div style={{fontSize:12.5,color:"rgba(255,255,255,0.66)"}}>
+              0 €, ohne Konto · läuft offline auf der Runde · Daten bleiben auf deinem Gerät
+            </div>
+          </div>
+
+          {showDesktopShot && (
+            <div style={{flex:"0 1 340px",minWidth:0,alignSelf:"stretch",display:"grid",gap:12,alignContent:"start"}}>
+              <HeroScene ratio="4 / 3"/>
+              <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+                {LANDING_SLIDES.map((item, index)=>(
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-label={`Folie: ${item.tab}`}
+                    aria-current={slide===index ? "true" : undefined}
+                    onClick={()=>showSlide(index)}
+                    style={{width:slide===index?26:9,height:9,padding:0,borderRadius:999,border:"none",cursor:"pointer",background:slide===index?"#fff":"rgba(255,255,255,0.34)",transition:reduceMotion?"none":"width 220ms ease, background 220ms ease"}}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {!showDesktopShot && (
+          <div style={{position:"relative",display:"flex",gap:8,justifyContent:"center",marginTop:16}}>
+            {LANDING_SLIDES.map((item, index)=>(
+              <button
+                key={item.id}
+                type="button"
+                aria-label={`Folie: ${item.tab}`}
+                aria-current={slide===index ? "true" : undefined}
+                onClick={()=>showSlide(index)}
+                style={{width:slide===index?26:9,height:9,padding:0,borderRadius:999,border:"none",cursor:"pointer",background:slide===index?"#fff":"rgba(255,255,255,0.34)",transition:reduceMotion?"none":"width 220ms ease, background 220ms ease"}}
+              />
+            ))}
+          </div>
+        )}
       </section>
+
+      <div ref={panelRef} style={{scrollMarginTop:14,marginBottom:22}}>
+        {panels[panel]}
+      </div>
 
       <AppFooter onOpenLegal={onOpenLegal}/>
     </div>
@@ -3946,18 +4070,26 @@ const WOLF_EYE_PATH = "M 33 30.5 L 41.5 33 L 38 37 L 32 34.5 Z";
 const WOLF_EAR_PATH = "M 53 9 L 63 21 L 55 21 Z";
 const WOLF_DARK = "#0E4C3A";
 
+// Der Inhalt der Bildmarke in ihren eigenen 64x64-Koordinaten. Icon und
+// Aufmacher-Szene setzen beide darauf auf, damit die Zahlen nur hier stehen.
+function WolfFlagArt() {
+  return (
+    <g transform="translate(-11.26 -0.71) scale(1.34)">
+      <line x1="15.5" y1="8.5" x2="15.5" y2="42.3" stroke="#fff" strokeWidth={3} strokeLinecap="round"/>
+      <path d={WOLF_FLAG_PATH} fill="#fff"/>
+      <g transform="translate(19.898 12.748) scale(0.255)">
+        <path d={WOLF_HEAD_PATH} fill={WOLF_DARK}/>
+        <path d={WOLF_EYE_PATH} fill="#fff"/>
+        <path d={WOLF_EAR_PATH} fill="#fff"/>
+      </g>
+    </g>
+  );
+}
+
 function WolfFlagMark({size=34}) {
   return (
     <svg viewBox="0 0 64 64" width={size} height={size} aria-hidden="true" style={{flexShrink:0,display:"block"}}>
-      <g transform="translate(-11.26 -0.71) scale(1.34)">
-        <line x1="15.5" y1="8.5" x2="15.5" y2="42.3" stroke="#fff" strokeWidth={3} strokeLinecap="round"/>
-        <path d={WOLF_FLAG_PATH} fill="#fff"/>
-        <g transform="translate(19.898 12.748) scale(0.255)">
-          <path d={WOLF_HEAD_PATH} fill={WOLF_DARK}/>
-          <path d={WOLF_EYE_PATH} fill="#fff"/>
-          <path d={WOLF_EAR_PATH} fill="#fff"/>
-        </g>
-      </g>
+      <WolfFlagArt/>
     </svg>
   );
 }
