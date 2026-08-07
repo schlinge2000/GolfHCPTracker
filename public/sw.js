@@ -1,4 +1,4 @@
-const CACHE_NAME = 'golf-wolf-v1';
+const CACHE_NAME = 'wolf-golf-v1';
 const APP_SHELL = [
   '/',
   '/index.html',

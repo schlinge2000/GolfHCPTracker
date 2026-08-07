@@ -1,13 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Golf Wolf">
-  <title>Golf Wolf</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Wolf Golf">
+  <title>Wolf Golf</title>
   <defs>
-    <linearGradient id="golfWolfBg" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="wolfGolfBg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#25AF83"/>
       <stop offset="0.5" stop-color="#1D9E75"/>
       <stop offset="1" stop-color="#0F5C46"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="0" fill="url(#golfWolfBg)"/>
+  <rect width="64" height="64" rx="0" fill="url(#wolfGolfBg)"/>
   <g transform="translate(32 32) scale(0.76) translate(-32 -32)">
   <g>
     <line x1="10" y1="54.5" x2="54" y2="54.5" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity="0.32"/>
