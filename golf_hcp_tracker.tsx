@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import qrcode from "qrcode-generator";
 
-import { buildShareUrl, describeShareCard, parseShareHash, type ShareCard } from "./src/shareCard";
+import { buildShareUrl, describeShareCard, parseShareHash, type GameCard, type ShareCard } from "./src/shareCard";
 import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline, parseHandicapIndex } from "./src/hcpMath";
 import { suggestHoles, normalizeHoles, totalPar, buildAllocations, scoreMatchplay, scoreSkins, scoreNassau, scoreWolf, scoreBingoBangoBongo, nassauSegments, BBB_AWARDS, stablefordFromHoles, playedHoleCount, DEFAULT_HANDICAP_CONFIG } from "./src/gameMath";
 import { fetchUsageStats, isUsagePingEnabled, setUsagePingEnabled, whenUsagePingSettled, USAGE_ID_RETENTION_DAYS, type UsageStats } from "./src/usagePing";
@@ -2940,8 +2940,35 @@ function GamePlayView({game, onScore, onChoice, onAward, onPress, onFinish, onRe
 
 function GamesView({games, courses, players, profile, displayHcp, onStartGame, onAddPlayer, onScore, onWolfChoice, onBbbAward, onNassauPress, onFinishGame, onReopenGame, onDeleteGame, onCreateHcpRound}) {
   const [screen, setScreen] = useState<{mode:"list"|"setup"|"play"; gameId?:number}>({mode:"list"});
+  const [sharedGame, setSharedGame] = useState(null);
   const openGame = games.find(g=>g.id === screen.gameId);
   const mePlayer = players.find(p=>p.isMe);
+
+  // Geteilt wird nur das Setup, nie der Spielstand: Jeder schreibt selbst mit.
+  const sharedGameCard = useMemo(()=>{
+    if (!sharedGame) return null;
+    const course = courses.find(c=>c.id === sharedGame.courseId);
+    const ids = sharedGame.participants.map(participant=>participant.playerId);
+    return {
+      kind: "game",
+      date: sharedGame.date,
+      holeCount: sharedGame.holeCount,
+      course: {
+        name: sharedGame.courseName,
+        courseRating: parseFloat(sharedGame.courseRating),
+        slopeRating: parseFloat(sharedGame.slopeRating),
+        par: parseInt(sharedGame.coursePar, 10),
+        tee: course?.tee,
+        holeCount: sharedGame.holeCount,
+        holeData: sharedGame.holes?.map(hole=>({par: hole.par, si: hole.si})),
+      },
+      formats: sharedGame.formats,
+      matchup: (sharedGame.matchup || []).map(id=>ids.indexOf(id)).filter(index=>index >= 0),
+      handicap: {mode: sharedGame.handicap.mode, percent: sharedGame.handicap.percent},
+      stake: sharedGame.stake,
+      players: sharedGame.participants.map(participant=>({name: participant.name, hcpIndex: participant.hcpIndex})),
+    } as GameCard;
+  },[sharedGame, courses]);
 
   if (screen.mode === "setup") {
     return (
@@ -2965,8 +2992,19 @@ function GamesView({games, courses, players, profile, displayHcp, onStartGame, o
       <div>
         <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
           <h2 style={{fontSize:18,fontWeight:600,margin:0}}>{openGame.courseName}</h2>
-          <button onClick={()=>setScreen({mode:"list"})} style={{...gamesGhostBtn,padding:"6px 12px",fontSize:13}}>Übersicht</button>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setSharedGame(openGame)} style={{...gamesGhostBtn,padding:"6px 12px",fontSize:13}}>Teilen</button>
+            <button onClick={()=>setScreen({mode:"list"})} style={{...gamesGhostBtn,padding:"6px 12px",fontSize:13}}>Übersicht</button>
+          </div>
         </div>
+        {sharedGameCard && (
+          <Modal title="Spiel teilen" onClose={()=>setSharedGame(null)} maxWidth={620}>
+            <ShareCardPanel
+              card={sharedGameCard}
+              hint="Jeder scannt den Code mit der Kamera seines Telefons und bekommt dasselbe Spiel: gleiche Spieler, gleiche Formate, gleiche Einsätze. Dann schreibt jeder selbst mit, und am Ende vergleicht ihr die Abrechnungen. Übertragen werden nur die Eingaben – Vorgaben rechnet jedes Gerät daraus selbst, damit alle auf dasselbe Ergebnis kommen."
+            />
+          </Modal>
+        )}
         <GamePlayView
           game={openGame}
           onScore={(holeIndex, playerId, value)=>onScore(openGame.id, holeIndex, playerId, value)}
@@ -4250,7 +4288,7 @@ export default function App() {
         db.players = players;
         return db;
       });
-    } else {
+    } else if (card.kind === "course") {
       updateDB(db=>{
         const courses = [...db.courses];
         const patch = {
@@ -4268,8 +4306,92 @@ export default function App() {
         db.courses = courses;
         return db;
       });
+    } else {
+      acceptGameCard(card);
     }
     dismissCard();
+  };
+
+  /**
+   * Uebernimmt ein geteiltes Spiel. Platz und Mitspieler werden bei Bedarf
+   * angelegt, danach entsteht dasselbe Spiel wie auf dem Geraet des Gastgebers:
+   * Course Handicaps und Vorgabenverteilung rechnet dieses Geraet aus denselben
+   * Eingaben selbst nach, damit die Abrechnungen am Ende vergleichbar sind.
+   */
+  const acceptGameCard = (card: GameCard) => {
+    updateDB(db=>{
+      const courses = [...db.courses];
+      const courseIndex = courses.findIndex(c=>c.name.toLowerCase() === card.course.name.toLowerCase());
+      const coursePatch = {
+        name: card.course.name,
+        courseRating: card.course.courseRating,
+        slopeRating: card.course.slopeRating,
+        par: card.course.par,
+        tee: card.course.tee || "Gelb",
+        holeCount: card.holeCount,
+        ...(card.course.holeData ? {holeData: card.course.holeData} : {}),
+      };
+      let courseId;
+      if (courseIndex >= 0) {
+        courseId = courses[courseIndex].id;
+        courses[courseIndex] = {...courses[courseIndex], ...coursePatch};
+      } else {
+        courseId = db.nextCourseId;
+        courses.push({...coursePatch, notes: "", nineHolePhcpFactor: 0.5, id: courseId});
+        db.nextCourseId += 1;
+      }
+      db.courses = courses;
+
+      const players = [...db.players];
+      const profileName = String(db.profile.name || "").toLowerCase();
+      const participants = card.players.map(entry=>{
+        const isMe = Boolean(profileName) && entry.name.toLowerCase() === profileName;
+        let player = players.find(p=>isMe ? p.isMe : (!p.isMe && p.name.toLowerCase() === entry.name.toLowerCase()));
+        if (!player) {
+          player = {id: db.nextPlayerId, name: entry.name, hcpIndex: entry.hcpIndex, isMe};
+          players.push(player);
+          db.nextPlayerId += 1;
+        } else if (!isMe && player.hcpIndex !== entry.hcpIndex) {
+          players[players.indexOf(player)] = {...player, hcpIndex: entry.hcpIndex};
+        }
+        return {
+          playerId: String(player.id),
+          name: entry.name,
+          isMe,
+          hcpIndex: entry.hcpIndex,
+          courseHandicap: gameCourseHandicap(entry.hcpIndex, {...coursePatch, id: courseId}, card.holeCount),
+        };
+      });
+      db.players = players;
+
+      const holes = normalizeHoles(card.course.holeData, card.holeCount, card.course.par);
+      const gameId = db.nextGameId;
+      db.games = [...db.games, {
+        id: gameId,
+        createdAt: new Date().toISOString(),
+        date: card.date,
+        courseId,
+        courseName: card.course.name,
+        courseRating: card.course.courseRating,
+        slopeRating: card.course.slopeRating,
+        coursePar: card.course.par,
+        holeCount: card.holeCount,
+        holes,
+        handicap: card.handicap,
+        formats: card.formats,
+        matchup: card.matchup.map(index=>participants[index]?.playerId).filter(Boolean),
+        wolfChoices: Array.from({length: card.holeCount}, ()=>({partnerId:null, blind:false})),
+        bbbAwards: Array.from({length: card.holeCount}, ()=>({bingo:null, bango:null, bongo:null})),
+        nassauPresses: [],
+        stake: card.stake,
+        participants,
+        scores: Array.from({length: card.holeCount}, ()=>({})),
+        status: "running",
+      }];
+      db.nextGameId = gameId + 1;
+      return db;
+    });
+    setView("games");
   };
 
   useEffect(()=>{ if(isDesktop) setNavOpen(false); },[isDesktop]);
@@ -4427,15 +4549,17 @@ export default function App() {
   const newRound = () => setForm({ date:new Date().toISOString().slice(0,10), mode:"Stableford", format:"Einzel", holes:18, submitted:false, markerSigned:false, nineHoleAllowed:false, playingHcp:displayHcp });
 
   const cardPrompt = pendingCard && (
-    <Modal title={pendingCard.kind==="player" ? "Mitspieler übernehmen?" : "Platz übernehmen?"} onClose={dismissCard}>
+    <Modal title={pendingCard.kind==="player" ? "Mitspieler übernehmen?" : pendingCard.kind==="game" ? "Spiel mitspielen?" : "Platz übernehmen?"} onClose={dismissCard}>
       <div style={{fontSize:15,fontWeight:600,marginBottom:6}}>{describeShareCard(pendingCard)}</div>
       <p style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)",marginTop:0}}>
         {pendingCard.kind==="player"
           ? "Der Spieler steht dir danach in den Games zur Auswahl. Ein vorhandener Eintrag mit demselben Namen wird aktualisiert."
+          : pendingCard.kind==="game"
+          ? "Das Spiel wird auf diesem Gerät mit denselben Spielern, Formaten und Einsätzen angelegt. Platz und Mitspieler kommen mit, du schreibst deine eigenen Scores mit – am Ende vergleicht ihr die Abrechnungen."
           : "Der Platz landet in deiner Platzliste. Ein vorhandener Platz mit demselben Namen und Abschlag wird aktualisiert."}
       </p>
       <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
-        <button onClick={()=>acceptCard(pendingCard)} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:600,fontSize:14,fontFamily:"var(--font-sans)"}}>Übernehmen</button>
+        <button onClick={()=>acceptCard(pendingCard)} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:600,fontSize:14,fontFamily:"var(--font-sans)"}}>{pendingCard.kind==="game" ? "Mitspielen" : "Übernehmen"}</button>
         <button onClick={dismissCard} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:`0.5px solid ${COLORS.border}`,cursor:"pointer",color:"var(--color-text-primary)",fontSize:14,fontFamily:"var(--font-sans)"}}>Verwerfen</button>
       </div>
     </Modal>
