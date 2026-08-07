@@ -4783,6 +4783,8 @@ function AppBody() {
   const [form, setForm] = useState(null);
   const [courseForm, setCourseForm] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [logoutOpen, setLogoutOpen] = useState(false);
+  const [wipeArmed, setWipeArmed] = useState(false);
   // Geteilte Spieler- und Platzkarten kommen als Link mit Nutzlast im Fragment an.
   const [pendingCard, setPendingCard] = useState<ShareCard | null>(null);
 
@@ -5116,6 +5118,25 @@ function AppBody() {
     });
   },[db.profile.name, db.players, realDisplayHcp]);
 
+  // Abmelden ohne Konto: die App erkennt an einem leeren Profilnamen, dass sie
+  // wieder die Startseite zeigen soll. Die Runden bleiben dabei liegen – wer sich
+  // ganz vom Geraet trennen will, loescht sie im zweiten Schritt.
+  const leaveProfile = () => {
+    updateDB(db=>{ db.profile = {...db.profile, name:""}; return db; });
+    setLogoutOpen(false);
+    setNavOpen(false);
+    setView("dashboard");
+  };
+  const wipeDevice = () => {
+    // Erst den Schluessel entfernen, dann den leeren Stand setzen: der
+    // saveDB-Effekt schreibt danach den leeren Stand, nicht den alten.
+    try { localStorage.removeItem("golf_hcp_db"); } catch(e) {}
+    setDB(normalizeDB(null));
+    setLogoutOpen(false);
+    setNavOpen(false);
+    setView("dashboard");
+  };
+
   const newRound = () => setForm({ date:new Date().toISOString().slice(0,10), mode:"Stableford", format:"Einzel", holes:18, submitted:false, markerSigned:false, nineHoleAllowed:false, simulated:false, playingHcp:displayHcp });
 
   const cardPrompt = pendingCard && (
@@ -5258,6 +5279,19 @@ function AppBody() {
                         "Show the code to your playing partners: whoever scans it with their phone camera gets your name and current handicap index into their game – no typing. The code holds only those two details and never goes through a server.")}
               />
             </div>
+            <div style={{...cardStyle,padding:"20px 24px",marginTop:14}}>
+              <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>{t("Abmelden","Sign out")}</div>
+              <p style={{fontSize:13,lineHeight:1.6,color:"var(--color-text-secondary)",margin:"0 0 12px"}}>
+                {t("Die App hat kein Konto – dein Profil liegt allein in diesem Browser. Abmelden bringt dich zurück zur Startseite, ohne dass du den Browser-Speicher von Hand leeren musst.",
+                   "The app has no account – your profile lives only in this browser. Signing out takes you back to the start page without clearing browser storage by hand.")}
+              </p>
+              <button
+                type="button"
+                onClick={()=>{ setWipeArmed(false); setLogoutOpen(true); }}
+                style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",border:"1px solid var(--color-border-secondary)",background:"rgba(255,255,255,0.92)",color:"var(--color-text-primary)",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14,fontWeight:600}}>
+                {t("Abmelden","Sign out")}
+              </button>
+            </div>
           </>}
           {view==="data" && <DataPortability
             db={db}
@@ -5284,6 +5318,55 @@ function AppBody() {
 
           {form && <Modal title={form.id?(form.simulated?t("Simulation bearbeiten","Edit simulation"):t("Runde bearbeiten","Edit round")):t("Neue Runde","New round")} onClose={()=>setForm(null)}><RoundForm initial={form} courses={db.courses} currentHcp={displayHcp} recentDiffs={recentDiffs} nextSimulationDate={nextSimulationDate} onSave={saveRound} onCancel={()=>setForm(null)}/></Modal>}
           {courseForm && <Modal title={courseForm.id?t("Platz bearbeiten","Edit course"):t("Neuer Platz","New course")} onClose={()=>setCourseForm(null)}><CourseForm initial={courseForm} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} onSave={saveCourse} onCancel={()=>setCourseForm(null)}/></Modal>}
+          {logoutOpen && <Modal title={t("Abmelden","Sign out")} onClose={()=>setLogoutOpen(false)}>
+            <p style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)",margin:"0 0 16px"}}>
+              {t("Ohne Konto gibt es zwei Wege: Du verlässt nur das Profil und lässt die Daten hier liegen – oder du räumst das Gerät ganz auf.",
+                 "Without an account there are two ways out: leave the profile and keep the data here – or clear this device completely.")}
+            </p>
+
+            <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:12}}>
+              <div style={{fontSize:14,fontWeight:650,marginBottom:4}}>{t("Nur abmelden","Just sign out")}</div>
+              <div style={{fontSize:13,lineHeight:1.6,color:"var(--color-text-secondary)",marginBottom:12}}>
+                {t("Runden, Plätze und Spiele bleiben auf diesem Gerät. Sobald hier wieder ein Name eingetragen wird, sind sie da – auch bei einem anderen Namen.",
+                   "Rounds, courses and games stay on this device. As soon as a name is entered here again they are back – even under a different name.")}
+              </div>
+              <button type="button" onClick={leaveProfile}
+                style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14,fontWeight:600}}>
+                {t("Zur Startseite","Back to the start page")}
+              </button>
+            </div>
+
+            <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:16,border:"1px solid rgba(226,75,74,0.28)"}}>
+              <div style={{fontSize:14,fontWeight:650,marginBottom:4}}>{t("Abmelden und Daten löschen","Sign out and delete the data")}</div>
+              <div style={{fontSize:13,lineHeight:1.6,color:"var(--color-text-secondary)",marginBottom:12}}>
+                {t("Löscht Profil, Runden, Plätze und Spiele in diesem Browser. Das lässt sich nicht rückgängig machen – ein Backup gibt es vorher unter „Daten“ als JSON-Export.",
+                   "Deletes profile, rounds, courses and games in this browser. This cannot be undone – you can take a JSON backup first under „Daten“.")}
+              </div>
+              {wipeArmed ? (
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <button type="button" onClick={wipeDevice}
+                    style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"#E24B4A",color:"#fff",border:"none",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14,fontWeight:600}}>
+                    {t("Wirklich alles löschen","Yes, delete everything")}
+                  </button>
+                  <button type="button" onClick={()=>setWipeArmed(false)}
+                    style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:`0.5px solid ${COLORS.border}`,color:"var(--color-text-primary)",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14}}>
+                    {t("Zurück","Back")}
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={()=>setWipeArmed(true)}
+                  style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:"1px solid #E24B4A",color:"#E24B4A",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14,fontWeight:600}}>
+                  {t("Daten löschen","Delete the data")}
+                </button>
+              )}
+            </div>
+
+            <button type="button" onClick={()=>setLogoutOpen(false)}
+              style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:`0.5px solid ${COLORS.border}`,color:"var(--color-text-primary)",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14}}>
+              {t("Abbrechen","Cancel")}
+            </button>
+          </Modal>}
+
           {deleteConfirm && <Modal title={t("Runde löschen?","Delete round?")} onClose={()=>setDeleteConfirm(null)}>
             <p style={{color:COLORS.textSec,fontSize:14}}>{t("Diese Runde wird unwiderruflich gelöscht.","This round will be deleted for good.")}</p>
             <div style={{display:"flex",gap:8,marginTop:16}}>
