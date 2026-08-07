@@ -3993,94 +3993,16 @@ const LANDING_PANELS = [
   { id:"fragen", label:{ de:"Fragen", en:"Questions" } },
 ];
 
-// Aufmacher-Bild: die Jagd auf den Wolf. Ein langer Fairway zieht sich zum Grün
-// hinauf, der Wolf ist voran, drei Verfolger hinter ihm, dazu die Flugbahnen der
-// Bälle. Alles als SVG, damit es in jeder Groesse scharf bleibt und ohne
-// Fotomaterial auskommt; die Fahne auf dem Gruen kommt aus WolfFlagArt, damit die
-// Bildmarke nur an einer Stelle definiert ist.
+// Aufmacher-Bild: die Jagd auf den Wolf – ein langer Fairway zum Grün, der Wolf
+// voran, drei Verfolger hinter ihm, dazu die Flugbahnen der Bälle.
 //
-// Das Bild ist hoch angelegt (320x560). "fill" laesst es die ganze Hoehe der
-// Aufmacher-Karte fuellen, sonst gibt "ratio" das Seitenverhaeltnis vor.
-// preserveAspectRatio="slice" beschneidet die Raender, deshalb liegt alles
-// Wichtige in der Mitte.
-
-// Rennender Wolf im Profil, laeuft nach rechts. Eigene Koordinaten 0..96 breit.
-function WolfRunner({opacity=1}) {
-  return (
-    <g opacity={opacity}>
-      {/* Rute */}
-      <path d="M 7 30 C -3 21, -7 7, 4 0 C 5 12, 11 23, 16 27 Z" fill="#08281E"/>
-      {/* Rumpf, Hals, Kopf mit Ohr und Schnauze */}
-      <path d="M 8 32 C 16 22, 34 18, 50 21 C 56 15, 63 11, 70 11 L 72 3 L 78 11 L 86 11 L 94 17 L 84 22 L 76 24 C 70 29, 60 31, 50 31 C 34 35, 18 39, 8 32 Z" fill="#08281E"/>
-      {/* Vorderlaeufe im Galopp */}
-      <path d="M 70 24 L 78 40 L 72 41 L 63 27 Z" fill="#08281E"/>
-      <path d="M 60 27 L 60 44 L 54 43 L 52 28 Z" fill="#08281E"/>
-      {/* Hinterlaeufe */}
-      <path d="M 24 33 L 16 47 L 22 48 L 32 36 Z" fill="#08281E"/>
-      <path d="M 36 34 L 38 49 L 44 47 L 42 34 Z" fill="#08281E"/>
-      {/* Auge */}
-      <path d="M 74 15 L 79 16 L 77 19 L 73 18 Z" fill="#7BE0B4"/>
-    </g>
-  );
-}
-
-// Verfolger im Profil, laeuft nach rechts, Bag auf dem Ruecken. 0..40 breit.
-function ChasingGolfer({tone="#0A3A2C"}) {
-  return (
-    <g>
-      {/* Bag mit Schlaegern */}
-      <path d="M 8 26 L 14 26 L 15 48 L 9 48 Z" fill={tone}/>
-      <path d="M 10 26 L 6 14 M 13 26 L 12 13 M 15 26 L 18 15" stroke={tone} strokeWidth={1.6} strokeLinecap="round"/>
-      {/* Kopf, Kappe */}
-      <circle cx="24" cy="12" r="5.4" fill={tone}/>
-      <path d="M 19 10 L 31 9 L 30 6 L 21 6 Z" fill={tone}/>
-      {/* Rumpf, nach vorn gelehnt */}
-      <path d="M 19 18 C 22 15, 28 15, 30 19 L 29 33 L 19 33 Z" fill={tone}/>
-      {/* Arme */}
-      <path d="M 21 20 L 14 30 M 29 20 L 36 27" stroke={tone} strokeWidth={3.2} strokeLinecap="round"/>
-      {/* Beine im Schritt */}
-      <path d="M 21 32 L 16 52 L 21 53 L 25 36 Z" fill={tone}/>
-      <path d="M 26 32 L 32 50 L 27 52 L 23 36 Z" fill={tone}/>
-    </g>
-  );
-}
-
-// Sobald eine Illustration unter diesem Pfad liegt, zeigt der Aufmacher sie statt
-// der gezeichneten Szene. Faellt das Laden aus (Datei fehlt), bleibt das SVG
-// stehen – so gibt es nie ein kaputtes Bild.
+// "fill" laesst das Bild die ganze Hoehe der Aufmacher-Karte fuellen, sonst gibt
+// "ratio" das Seitenverhaeltnis vor. Beschnitten wird ueber object-position: der
+// Bildausschnitt sitzt bewusst unterhalb der Mitte, damit im 4:5-Ausschnitt am
+// Telefon oben die Fahne und unten der Schuh des vordersten Golfers drin bleiben.
 const HERO_IMAGE_SRC = "/hero-fairway.jpg";
 
 function HeroArt({ratio="4 / 3", fill=false}) {
-  const t = useT();
-  const [imageBroken, setImageBroken] = useState(false);
-  const frame: CSSProperties = {
-    width:"100%",
-    ...(fill ? {height:"100%",minHeight:280} : {aspectRatio:ratio}),
-    borderRadius:"var(--border-radius-lg)",overflow:"hidden",
-    border:"1px solid rgba(255,255,255,0.16)",boxShadow:"0 18px 40px rgba(4,20,14,0.34)",
-  };
-
-  if (!imageBroken) {
-    return (
-      <div style={frame}>
-        {/* Beim 4:5-Beschnitt am Telefon schneidet die Standardmitte (50%) den
-            Schuh des vordersten Golfers ab (Unterkante bei 88% der Bildhoehe,
-            Fahnenspitze bei 15%). 56% schiebt das Fenster so weit nach unten,
-            dass Schuh und Fahne gleich viel Luft behalten. */}
-        <img
-          src={HERO_IMAGE_SRC}
-          alt={t("Ein langer Fairway zum Grün: der Wolf läuft voran, drei Mitspieler jagen ihn.","A long fairway up to the green: the wolf runs ahead and three players chase him.")}
-          onError={()=>setImageBroken(true)}
-          style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"center 56%",display:"block"}}
-        />
-      </div>
-    );
-  }
-
-  return <HeroScene ratio={ratio} fill={fill}/>;
-}
-
-function HeroScene({ratio="4 / 3", fill=false}) {
   const t = useT();
   return (
     <div style={{
@@ -4089,85 +4011,11 @@ function HeroScene({ratio="4 / 3", fill=false}) {
       borderRadius:"var(--border-radius-lg)",overflow:"hidden",
       border:"1px solid rgba(255,255,255,0.16)",boxShadow:"0 18px 40px rgba(4,20,14,0.34)",
     }}>
-      <svg viewBox="0 0 320 560" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"
-        role="img"
-        aria-label={t("Ein langer Fairway zum Grün: der Wolf läuft voran, drei Mitspieler jagen ihn, Bälle fliegen in Richtung Fahne.","A long fairway up to the green: the wolf runs ahead, three players chase him, balls fly towards the pin.")}>
-        <defs>
-          <linearGradient id="hero-sky" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#062A22"/>
-            <stop offset="60%" stopColor="#0C4736"/>
-            <stop offset="100%" stopColor="#1B7A5C"/>
-          </linearGradient>
-          <linearGradient id="hero-turf" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#1F8C69"/>
-            <stop offset="55%" stopColor="#2FB184"/>
-            <stop offset="100%" stopColor="#38C692"/>
-          </linearGradient>
-          <linearGradient id="hero-rough" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#0A3A2C"/>
-            <stop offset="100%" stopColor="#124E3B"/>
-          </linearGradient>
-        </defs>
-
-        <rect width="320" height="560" fill="url(#hero-sky)"/>
-        <circle cx="248" cy="52" r="30" fill="#F7E3B6" opacity="0.16"/>
-
-        {/* Baumreihe am Horizont */}
-        <g fill="#062A22" opacity="0.9">
-          {[8,34,58,86,112,140,168,196,224,252,280,306].map((x,i)=>(
-            <ellipse key={x} cx={x} cy={150 - (i%3)*5} rx={20 + (i%4)*5} ry={22 + (i%3)*7}/>
-          ))}
-        </g>
-        <rect x="0" y="150" width="320" height="14" fill="#0A3A2C"/>
-
-        {/* Rough links und rechts, dazwischen bleibt der Fairway */}
-        <rect x="0" y="158" width="320" height="402" fill="url(#hero-rough)"/>
-
-        {/* Fairway: unten breit, oben schmal – die Perspektive macht ihn lang */}
-        <path d="M 126 162 L 194 162 L 306 560 L 14 560 Z" fill="url(#hero-turf)"/>
-        {/* Mähstreifen */}
-        <g opacity="0.16" fill="#0A3A2C">
-          <path d="M 140 162 L 152 162 L 106 560 L 62 560 Z"/>
-          <path d="M 168 162 L 180 162 L 258 560 L 214 560 Z"/>
-        </g>
-        {/* Bunker am rechten Rand */}
-        <ellipse cx="266" cy="300" rx="40" ry="15" fill="#E8DCB8" opacity="0.7"/>
-        <ellipse cx="26" cy="418" rx="26" ry="11" fill="#E8DCB8" opacity="0.55"/>
-
-        {/* Grün mit Loch und Fahne */}
-        <ellipse cx="160" cy="176" rx="46" ry="15" fill="#4CD8A4" opacity="0.95"/>
-        <ellipse cx="172" cy="177" rx="4" ry="1.8" fill="#06231B"/>
-        <g transform="translate(139 116) scale(0.72)">
-          <WolfFlagArt/>
-        </g>
-
-        {/* Ball-Flugbahnen: drei Schläge, alle Richtung Fahne */}
-        <g fill="none" stroke="#FFFFFF" strokeLinecap="round" strokeDasharray="6 8" opacity="0.62">
-          <path d="M 126 524 C 96 400, 122 268, 166 198" strokeWidth={2.2}/>
-          <path d="M 232 452 C 232 350, 202 258, 176 202" strokeWidth={2} opacity="0.85"/>
-          <path d="M 146 378 C 138 320, 144 250, 158 206" strokeWidth={1.7} opacity="0.6"/>
-        </g>
-        {/* Bälle auf ihren Bahnen */}
-        <circle cx="166" cy="198" r="4.2" fill="#fff"/>
-        <circle cx="176" cy="202" r="3.6" fill="#fff" opacity="0.9"/>
-        <circle cx="158" cy="206" r="3" fill="#fff" opacity="0.75"/>
-
-        {/* Der Wolf ist voran, schon kurz vor dem Grün – deshalb klein */}
-        <ellipse cx="150" cy="272" rx="30" ry="6" fill="#06231B" opacity="0.28"/>
-        <g transform="translate(108 224) scale(0.76)">
-          <WolfRunner/>
-        </g>
-
-        {/* Drei Verfolger, gestaffelt: je näher, je größer */}
-        <ellipse cx="122" cy="380" rx="20" ry="5" fill="#06231B" opacity="0.26"/>
-        <g transform="translate(98 322) scale(1.05)"><ChasingGolfer/></g>
-
-        <ellipse cx="204" cy="450" rx="26" ry="6" fill="#06231B" opacity="0.26"/>
-        <g transform="translate(178 366) scale(1.35)"><ChasingGolfer tone="#083327"/></g>
-
-        <ellipse cx="102" cy="504" rx="34" ry="8" fill="#06231B" opacity="0.26"/>
-        <g transform="translate(70 404) scale(1.62)"><ChasingGolfer tone="#062A20"/></g>
-      </svg>
+      <img
+        src={HERO_IMAGE_SRC}
+        alt={t("Ein langer Fairway zum Grün: der Wolf läuft voran, drei Mitspieler jagen ihn.","A long fairway up to the green: the wolf runs ahead and three players chase him.")}
+        style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"center 56%",display:"block"}}
+      />
     </div>
   );
 }
