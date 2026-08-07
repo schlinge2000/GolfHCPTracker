@@ -31,10 +31,13 @@ const LEGAL = {
   },
   operator: {
     name: "Christian Mießen",
-    street: "",       // Straße und Hausnummer (ladungsfähig, kein Postfach)
-    postalCity: "",   // PLZ und Ort
+    street: "",       // Wohnanschrift: Straße und Hausnummer (ladungsfähig, kein Postfach)
+    postalCity: "",   // Wohnanschrift: PLZ und Ort
     country: "Deutschland",
-    email: "",        // Kontakt-E-Mail für Impressum und Datenschutzanfragen
+    // Alias auf der eigenen Domain, muss als Weiterleitung auf ein echtes Postfach
+    // eingerichtet sein – eine im Impressum genannte, nicht erreichbare Adresse ist
+    // selbst ein Mangel.
+    email: "kontakt@wolfgolf.club",
     phone: "",        // optional, gesetzlich nicht erforderlich
     contactUrl: GITHUB_ISSUES_URL,
     contactLabel: "Issue im GitHub-Repository",
