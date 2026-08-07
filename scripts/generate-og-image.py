@@ -90,7 +90,7 @@ def main() -> None:
     # Unterzeile
     sub = font(REGULAR, 27)
     draw.text((PAD, 306), "Erzeuge Drucksituationen im Training –", font=sub, fill=MUTED)
-    draw.text((PAD, 344), "genau daran wird dein Golfspiel besser.", font=sub, fill=MUTED)
+    draw.text((PAD, 344), "unter Druck wird dein Spiel besser.", font=sub, fill=MUTED)
 
     # Merkmale als Pillen
     chip_font = font(BOLD, 21)
