@@ -4264,7 +4264,12 @@ export default function App() {
         <div style={{maxWidth:contentMaxWidth,margin:"0 auto",padding:contentShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
           <div style={{...cardStyle,display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:18,gap:16,flexWrap:"wrap",padding:isDesktop?"22px 24px":"18px 20px",background:"linear-gradient(140deg, rgba(20,46,37,0.96) 0%, rgba(18,57,44,0.94) 45%, rgba(29,158,117,0.76) 100%)",color:"#fff",position:"relative",overflow:"hidden"}}>
             <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at top right, rgba(255,255,255,0.16), transparent 28%), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)",backgroundSize:"auto, 24px 24px",opacity:0.4,pointerEvents:"none"}}/>
-            <div>
+            {/* Bildmarke mittig in der Karte. Die Texte darüber sind positioniert
+                (position:relative) und werden deshalb über dem Wolf gezeichnet. */}
+            <div aria-hidden="true" style={{position:"absolute",inset:0,display:"grid",placeItems:"center",pointerEvents:"none",opacity:0.34,filter:"drop-shadow(0 10px 22px rgba(4,20,14,0.4))"}}>
+              <WolfFlagMark size={isDesktop?168:128}/>
+            </div>
+            <div style={{position:"relative"}}>
               {isDesktop && <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",opacity:0.72,marginBottom:8}}>Personal Golf Office</div>}
               <div style={{fontSize:isDesktop?28:22,fontWeight:600,marginBottom:6}}>{isDesktop ? "Wolf Golf" : db.profile.name}</div>
               <div style={{fontSize:14,color:"rgba(255,255,255,0.72)"}}>{isDesktop ? `${db.profile.name} · DGV · WHS` : "DGV · WHS"}</div>
