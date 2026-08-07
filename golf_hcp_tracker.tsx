@@ -18,6 +18,34 @@ const MODES = ["Stableford","Stroke Play"];
 const FORMATS = ["Einzel","Vierer","Vierball"];
 const GITHUB_REPO_URL = "https://github.com/schlinge2000/GolfHCPTracker";
 const GITHUB_ISSUES_URL = "https://github.com/schlinge2000/GolfHCPTracker/issues";
+
+// Zentrale Pflege der rechtlichen Angaben: Impressum und Datenschutzerklärung lesen
+// ausschließlich hier. Bewusst ohne Postanschrift und E-Mail, weil die App ein rein
+// privates, nicht-kommerzielles Angebot ohne Impressumspflicht nach § 5 DDG ist und
+// der Kontakt über GitHub-Issues läuft. Wird die App geschäftsmäßig betrieben, müssen
+// Anschrift und E-Mail hier ergänzt und in den Rechtstexten benannt werden.
+const LEGAL = {
+  operator: {
+    name: "Christian Mießen",
+    contactUrl: GITHUB_ISSUES_URL,
+    contactLabel: "Issue im GitHub-Repository",
+  },
+  hosting: {
+    provider: "Netlify, Inc.",
+    address: "101 2nd Street, San Francisco, CA 94105, USA",
+    privacyUrl: "https://www.netlify.com/privacy/",
+    privacyLabel: "netlify.com/privacy",
+  },
+  updatedAt: "2026-08-07",
+};
+
+function formatLegalDate(iso) {
+  const parts = String(iso||"").split("-");
+  return parts.length===3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : String(iso||"");
+}
+
+const LEGAL_VIEW_LABELS = { impressum:"Impressum", datenschutz:"Datenschutzerklärung" };
+const isLegalView = view => view==="impressum" || view==="datenschutz";
 const COLORS = { hcp:"#1D9E75", stroke:"#378ADD", stableford:"#7F77DD", border:"var(--color-border-tertiary)", textSec:"var(--color-text-secondary)" };
 const inp: CSSProperties = { width:"100%", boxSizing:"border-box", padding:"10px 12px", borderRadius:"var(--border-radius-md)", border:"1px solid var(--color-border-secondary)", background:"rgba(255,255,255,0.9)", color:"var(--color-text-primary)", fontSize:14, fontFamily:"var(--font-sans)", boxShadow:"inset 0 1px 0 rgba(255,255,255,0.55)" };
 const sel = { ...inp };
@@ -1874,7 +1902,7 @@ function DataPortability({db, onJsonImport, onGolfDePdfImport}) {
   );
 }
 
-function HcpInfo() {
+function HcpInfo({onOpenLegal}) {
   const card = (children) => (
     <div style={{...cardStyle,padding:"16px 20px",marginBottom:14}}>
       {children}
@@ -1973,15 +2001,226 @@ function HcpInfo() {
       </>)}
 
       {card(<>
-        {h("Datenschutz")}
+        {h("Datenschutz und Impressum")}
         {p("Die App speichert Runden, Plaetze und Profildaten lokal im Browser auf deinem Geraet. Es gibt keinen Login, keine Server-Synchronisation und kein eingebautes Tracking oder Analytics.")}
-        {p("Der aktuelle Stand ist als private, nicht-kommerzielle App gedacht und wird nicht ueber eine eigene oeffentlich auffindbare Domain vermarktet. Wenn sich Hosting, Tracking oder Datenfluesse spaeter aendern, muss der Datenschutzhinweis entsprechend angepasst werden.")}
+        {p("Welche Daten wo liegen, wie lange sie bleiben und welche Rechte du hast, steht ausführlich in der Datenschutzerklärung.")}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>
+          <button
+            type="button"
+            onClick={()=>onOpenLegal("datenschutz")}
+            style={{padding:"10px 14px",borderRadius:"var(--border-radius-md)",background:"#E1F1FB",color:"#0C447C",border:"1px solid rgba(12,68,124,0.18)",fontFamily:"var(--font-sans)",fontSize:13,fontWeight:600,cursor:"pointer"}}
+          >
+            Datenschutzerklärung
+          </button>
+          <button
+            type="button"
+            onClick={()=>onOpenLegal("impressum")}
+            style={{padding:"10px 14px",borderRadius:"var(--border-radius-md)",background:"#F5F4F0",color:"var(--color-text-primary)",border:"0.5px solid var(--color-border-secondary)",fontFamily:"var(--font-sans)",fontSize:13,fontWeight:600,cursor:"pointer"}}
+          >
+            Impressum
+          </button>
+        </div>
       </>)}
     </div>
   );
 }
 
-function AppFooter() {
+const legalTextStyle: CSSProperties = { fontSize:14, lineHeight:1.7, color:"var(--color-text-secondary)", margin:"0 0 10px" };
+const legalLinkStyle: CSSProperties = { color:"#0C447C", textDecoration:"none", fontWeight:600 };
+const legalLinkButtonStyle: CSSProperties = { ...legalLinkStyle, background:"none", border:"none", padding:0, margin:0, cursor:"pointer", fontFamily:"var(--font-sans)", fontSize:13, textAlign:"left" };
+
+function LegalCard({title, children}: {title:string, children:ReactNode}) {
+  return (
+    <section style={{...cardStyle,padding:"18px 20px",marginBottom:14}}>
+      <h2 style={{fontSize:16,fontWeight:600,margin:"0 0 10px",color:"var(--color-text-primary)"}}>{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function LegalP({children}: {children:ReactNode}) {
+  return <p style={legalTextStyle}>{children}</p>;
+}
+
+function LegalList({items}: {items:ReactNode[]}) {
+  return (
+    <ul style={{margin:"0 0 10px",paddingLeft:20}}>
+      {items.map((item,i)=><li key={i} style={{...legalTextStyle,margin:"0 0 6px"}}>{item}</li>)}
+    </ul>
+  );
+}
+
+function LegalContactBlock() {
+  const { name, contactUrl, contactLabel } = LEGAL.operator;
+  return (
+    <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:12,fontSize:14,lineHeight:1.7,color:"var(--color-text-secondary)"}}>
+      <div style={{fontWeight:600,color:"var(--color-text-primary)"}}>{name}</div>
+      <div>Privatperson, Betrieb als nicht-kommerzielles Freizeitprojekt</div>
+      <div style={{marginTop:8}}>
+        Kontakt: <a href={contactUrl} target="_blank" rel="noreferrer" style={legalLinkStyle}>{contactLabel}</a>
+      </div>
+    </div>
+  );
+}
+
+function Impressum() {
+  return (
+    <div>
+      <LegalCard title="Anbieter">
+        <LegalP>Verantwortlich für dieses Angebot und für die Inhalte nach § 18 Abs. 2 Medienstaatsvertrag (MStV):</LegalP>
+        <LegalContactBlock/>
+        <LegalP>Fehler, Rückfragen und Verbesserungsvorschläge werden dort am schnellsten gesehen:</LegalP>
+        <div style={{fontSize:14,lineHeight:1.8}}>
+          <a href={GITHUB_ISSUES_URL} target="_blank" rel="noreferrer" style={legalLinkStyle}>Issue auf GitHub anlegen</a>
+        </div>
+      </LegalCard>
+
+      <LegalCard title="Art des Angebots und Impressumspflicht">
+        <LegalP>Der Golf HCP Tracker ist ein privates, nicht-kommerzielles Freizeitprojekt. Die App wird ohne Gewinnerzielungsabsicht bereitgestellt: Es werden keine Verträge geschlossen, keine Zahlungen abgewickelt, keine Werbung ausgeliefert und keine Daten vermarktet.</LegalP>
+        <LegalP>Die Impressumspflicht nach § 5 Digitale-Dienste-Gesetz (DDG) gilt für geschäftsmäßige, in der Regel gegen Entgelt angebotene digitale Dienste. Für ein rein privates Angebot wie dieses greift sie nicht. Deshalb wird hier bewusst keine Postanschrift veröffentlicht; der Kontakt läuft über das öffentliche Repository.</LegalP>
+        <LegalP>Sollte die App künftig geschäftsmäßig betrieben werden – etwa mit Werbung, Bezahlfunktionen oder als Angebot eines Unternehmens –, werden Anschrift, E-Mail-Adresse und die weiteren Pflichtangaben nach § 5 DDG hier ergänzt.</LegalP>
+      </LegalCard>
+
+      <LegalCard title="Haftung für Inhalte und Berechnungen">
+        <LegalP>Die App berechnet Score Differenziale und den Handicap-Index nach den Regeln des World Handicap System (WHS) in der Auslegung des Deutschen Golf Verbands (DGV). Die Berechnungen erfolgen nach bestem Wissen, sind aber unverbindlich und können von der offiziellen Führung abweichen – zum Beispiel weil die Platzverhältnis-Korrektur (PCC) mit 0 angenommen wird.</LegalP>
+        <LegalP>Verbindlich ist ausschließlich der von deinem Heimatclub beziehungsweise über den DGV geführte Handicap-Index. Für die Richtigkeit, Vollständigkeit und Aktualität der Berechnungen und Inhalte wird keine Haftung übernommen. Die Nutzung erfolgt auf eigenes Risiko; insbesondere ersetzt die App keine Datensicherung deiner Runden.</LegalP>
+      </LegalCard>
+
+      <LegalCard title="Haftung für Links">
+        <LegalP>Die App verweist auf externe Seiten (GitHub). Für deren Inhalte sind ausschließlich die jeweiligen Anbieter verantwortlich. Zum Zeitpunkt der Verlinkung waren keine rechtswidrigen Inhalte erkennbar. Eine dauerhafte inhaltliche Kontrolle verlinkter Seiten ist ohne konkrete Anhaltspunkte für eine Rechtsverletzung nicht zumutbar. Bei bekannt werdenden Rechtsverstößen werden solche Links entfernt.</LegalP>
+      </LegalCard>
+
+      <LegalCard title="Urheberrecht, Lizenz und Marken">
+        <LegalP>Der Quellcode der App steht unter der MIT-Lizenz; die Lizenzbedingungen liegen im Repository (Datei LICENSE). Von dir erfasste Runden-, Platz- und Profildaten gehören dir und bleiben auf deinem Gerät.</LegalP>
+        <LegalP>„World Handicap System“, „WHS“, „DGV“, „golf.de“ sowie Namen von Golfanlagen sind Kennzeichen der jeweiligen Rechteinhaber und werden hier nur beschreibend verwendet. Es besteht keine Verbindung zum DGV, zu golf.de oder zu einzelnen Golfanlagen und keine Zusammenarbeit mit ihnen.</LegalP>
+      </LegalCard>
+
+      <LegalCard title="Verbraucherstreitbeilegung">
+        <LegalP>Zur Teilnahme an einem Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle sind wir nicht verpflichtet und nicht bereit.</LegalP>
+      </LegalCard>
+    </div>
+  );
+}
+
+function Datenschutz() {
+  const storageItems = [
+    ["golf_hcp_db", "Profil (Anzeigename, Start-HCP), angelegte Plätze (Name, Course Rating, Slope, Par, Tee, Notizen), gespeicherte Runden (Datum, Platz, Brutto- bzw. Stableford-Ergebnis, Spielvorgabe, Kennzeichen wie „eingereicht“ und „Marker unterschrieben“) sowie Runden im Simulator."],
+    ["golf_hcp_nav_collapsed", "Anzeige-Einstellung, ob die Seitennavigation eingeklappt ist."],
+  ];
+
+  return (
+    <div>
+      <LegalCard title="Das Wichtigste in vier Punkten">
+        <LegalList items={[
+          "Deine Runden, Plätze und Profildaten bleiben im Speicher deines Browsers auf deinem Gerät. Es gibt kein Benutzerkonto und keine Server-Synchronisation.",
+          "Kein Tracking, keine Analyse-Werkzeuge, keine Werbe-Cookies, keine Social-Media-Plugins.",
+          "Keine externen Schriftarten, Skripte oder Bibliotheken von Drittanbieter-Servern: Alles, was die App braucht, wird von ihrer eigenen Adresse geladen.",
+          "Der golf.de-PDF-Import läuft vollständig in deinem Browser. Die PDF-Datei wird nicht hochgeladen.",
+        ]}/>
+      </LegalCard>
+
+      <LegalCard title="1. Verantwortlicher">
+        <LegalP>Verantwortlicher im Sinne von Art. 4 Nr. 7 DSGVO für die Bereitstellung dieser App:</LegalP>
+        <LegalContactBlock/>
+        <LegalP>Anfragen zum Datenschutz erreichen den Betreiber über ein Issue im Repository. Beachte dabei, dass Issues öffentlich sichtbar sind – gib dort keine Daten an, die nicht öffentlich werden sollen. Ein Datenschutzbeauftragter ist nicht bestellt, da die Voraussetzungen dafür nicht vorliegen.</LegalP>
+      </LegalCard>
+
+      <LegalCard title="2. Daten, die nur auf deinem Gerät liegen">
+        <LegalP>Alles, was du in der App erfasst, wird ausschließlich im <em>localStorage</em> deines Browsers gespeichert – unter diesen Schlüsseln:</LegalP>
+        <div style={{border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",overflow:"hidden",margin:"10px 0 12px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"minmax(120px, 0.7fr) 1.6fr",gap:12,background:"var(--color-background-secondary)",padding:"7px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.04em",textTransform:"uppercase",color:"var(--color-text-secondary)"}}>
+            <span>Speicherschlüssel</span><span>Inhalt</span>
+          </div>
+          {storageItems.map(([key, description],i)=>(
+            <div key={key} style={{display:"grid",gridTemplateColumns:"minmax(120px, 0.7fr) 1.6fr",gap:12,padding:"9px 12px",fontSize:13,lineHeight:1.6,borderTop:"0.5px solid var(--color-border-tertiary)",background:i%2===0?"rgba(255,255,255,0.72)":"var(--color-background-secondary)"}}>
+              <span style={{fontFamily:"monospace",fontSize:12,color:"var(--color-text-primary)",wordBreak:"break-word"}}>{key}</span>
+              <span style={{color:"var(--color-text-secondary)"}}>{description}</span>
+            </div>
+          ))}
+        </div>
+        <LegalP>Diese Daten werden weder an den Betreiber noch an Dritte übertragen und auf keinen Server geschrieben. Der Betreiber hat keinen Zugriff darauf und kann sie nicht einsehen. Ob du dabei echte Namen von Mitspielern oder Golfanlagen einträgst, entscheidest du selbst; die App fragt keine Kontaktdaten ab.</LegalP>
+      </LegalCard>
+
+      <LegalCard title="3. Speicherung im Browser statt Cookies">
+        <LegalP>Die App setzt keine Cookies. Sie nutzt den lokalen Browserspeicher (localStorage) für deine Daten und einen Service Worker mit Browser-Cache, damit die App nach dem ersten Laden auch offline funktioniert und schnell startet.</LegalP>
+        <LegalP>Diese Speicherung ist unbedingt erforderlich, um die von dir ausdrücklich gewünschte Funktion bereitzustellen – Runden dauerhaft behalten und die App offline nutzen. Sie ist deshalb nach § 25 Abs. 2 Nr. 2 TDDDG einwilligungsfrei; ein Cookie-Banner ist dafür nicht erforderlich.</LegalP>
+      </LegalCard>
+
+      <LegalCard title="4. PDF-Import, Export und Backup">
+        <LegalP>Beim Import eines golf.de-Scoring-Records wird die PDF-Datei mit der Bibliothek pdf.js direkt in deinem Browser gelesen und ausgewertet. Die Datei verlässt dein Gerät nicht, es findet kein Upload statt, und die Bibliothek wird mit der App ausgeliefert – nicht von einem fremden Server nachgeladen.</LegalP>
+        <LegalP>Der Export im Bereich „Daten“ erzeugt eine JSON-Datei, die dein Browser lokal speichert (üblicherweise im Download-Ordner). Was du anschließend mit dieser Datei machst – etwa in einer Cloud ablegen –, liegt in deiner Verantwortung.</LegalP>
+      </LegalCard>
+
+      <LegalCard title="5. Hosting und Server-Logfiles">
+        <LegalP>Die App wird als statische Webseite bereitgestellt durch {LEGAL.hosting.provider}, {LEGAL.hosting.address}.</LegalP>
+        <LegalP>Beim Abruf überträgt dein Browser technisch notwendige Daten, die der Hosting-Anbieter in Server-Logfiles verarbeitet: IP-Adresse, Datum und Uhrzeit des Zugriffs, abgerufene Datei, übertragene Datenmenge, Referrer und Browser- bzw. Gerätekennung (User-Agent).</LegalP>
+        <LegalP>Zweck ist die technische Bereitstellung, Stabilität und Sicherheit des Angebots. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; das berechtigte Interesse liegt im störungsfreien und sicheren Betrieb. Diese Logdaten werden vom Betreiber nicht personenbezogen ausgewertet und nicht mit deinen lokal gespeicherten Runden zusammengeführt; die Löschung richtet sich nach den Fristen des Anbieters. Der Anbieter wird dabei als Auftragsverarbeiter nach Art. 28 DSGVO auf Grundlage seines Data Processing Addendum tätig.</LegalP>
+        <LegalP>Der Anbieter sitzt in den USA und liefert die Inhalte über ein weltweites Content-Delivery-Netzwerk aus; damit ist eine Übermittlung in die USA verbunden. {LEGAL.hosting.provider} ist nach dem EU-U.S. Data Privacy Framework zertifiziert, sodass sich die Übermittlung auf den Angemessenheitsbeschluss der EU-Kommission (Art. 45 DSGVO) stützt, ergänzend auf EU-Standarddatenschutzklauseln (Art. 46 Abs. 2 lit. c DSGVO).</LegalP>
+        <div style={{fontSize:14,lineHeight:1.8}}>
+          Datenschutzhinweise des Hosting-Anbieters:{" "}
+          <a href={LEGAL.hosting.privacyUrl} target="_blank" rel="noreferrer" style={legalLinkStyle}>{LEGAL.hosting.privacyLabel}</a>
+        </div>
+      </LegalCard>
+
+      <LegalCard title="6. Externe Links und Installation als App">
+        <LegalP>Die App verlinkt auf GitHub (Repository und Fehlermeldungen). Diese Links öffnest du bewusst; erst dann werden Daten an GitHub übertragen, wofür die Datenschutzhinweise von GitHub Inc. gelten. Eingebettete Inhalte von GitHub oder anderen Diensten gibt es nicht.</LegalP>
+        <LegalP>Installierst du die App über die Funktion deines Browsers oder Betriebssystems auf dem Startbildschirm, entstehen dadurch keine zusätzlichen Datenübermittlungen an den Betreiber. Die installierte Version verhält sich wie die Webseite.</LegalP>
+      </LegalCard>
+
+      <LegalCard title="7. Keine Weitergabe, kein Profiling">
+        <LegalP>Es findet keine Weitergabe von Daten an Dritte zu eigenen Zwecken statt. Übermittlungen in Drittländer außerhalb der EU/des EWR beschränken sich auf das, was durch das Hosting (Abschnitt 5) und von dir selbst geöffnete Links (Abschnitt 6) technisch bedingt ist. Es gibt keine automatisierte Entscheidungsfindung und kein Profiling im Sinne von Art. 22 DSGVO.</LegalP>
+      </LegalCard>
+
+      <LegalCard title="8. Speicherdauer und Löschung">
+        <LegalP>Deine Einträge bleiben so lange gespeichert, bis du sie löschst. Einzelne Runden entfernst du in der Rundenliste. Vollständig löschst du alle Daten, indem du in den Einstellungen deines Browsers die Website-Daten für diese App löschst; bei einer installierten App genügt in der Regel das Deinstallieren. Auch der Offline-Cache des Service Workers wird dabei entfernt.</LegalP>
+        <LegalP>Ein Backup vor dem Löschen erstellst du im Bereich „Daten“ über den JSON-Export.</LegalP>
+      </LegalCard>
+
+      <LegalCard title="9. Deine Rechte">
+        <LegalP>Du hast nach der DSGVO das Recht auf Auskunft (Art. 15), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch gegen Verarbeitungen auf Grundlage berechtigter Interessen (Art. 21). Außerdem kannst du dich bei einer Datenschutz-Aufsichtsbehörde beschweren – zuständig ist die Behörde deines Wohnsitz-Bundeslandes oder die des Betreibers.</LegalP>
+        <LegalP>Praktischer Hinweis: Zu deinen lokal gespeicherten Runden kann der Betreiber keine Auskunft erteilen und sie auch nicht löschen, weil er keinen Zugriff darauf hat. Diese Daten hast du selbst vollständig in der Hand – Auskunft und Datenübertragbarkeit erfüllt der JSON-Export im Bereich „Daten“. Für Anfragen zu den Server-Logfiles nutze den in Abschnitt 1 genannten Kontaktweg.</LegalP>
+      </LegalCard>
+
+      <LegalCard title="10. Stand und Änderungen">
+        <LegalP>Stand dieser Datenschutzerklärung: {formatLegalDate(LEGAL.updatedAt)}. Ändern sich Funktionen, Hosting oder Datenflüsse der App, wird diese Erklärung entsprechend angepasst.</LegalP>
+      </LegalCard>
+    </div>
+  );
+}
+
+function LegalPage({page, onOpenLegal, onBack, backLabel="Zurück"}) {
+  const other = page==="impressum" ? "datenschutz" : "impressum";
+  const switchButtonStyle: CSSProperties = { padding:"8px 14px", borderRadius:"var(--border-radius-md)", border:"1px solid var(--color-border-tertiary)", background:"rgba(255,255,255,0.92)", color:"var(--color-text-primary)", fontFamily:"var(--font-sans)", fontSize:13, fontWeight:600, cursor:"pointer" };
+
+  return (
+    <div>
+      <div style={{...cardStyle,padding:"18px 20px",marginBottom:14,display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:"#1D9E75",marginBottom:6}}>Rechtliches</div>
+          <h1 style={{fontSize:22,fontWeight:600,margin:"0 0 4px"}}>{LEGAL_VIEW_LABELS[page]}</h1>
+          <div style={{fontSize:13,color:"var(--color-text-secondary)"}}>Stand: {formatLegalDate(LEGAL.updatedAt)}</div>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
+          <button onClick={()=>onOpenLegal(other)} style={switchButtonStyle}>{LEGAL_VIEW_LABELS[other]}</button>
+          <button onClick={onBack} style={{...switchButtonStyle,background:"#F5F4F0"}}>{backLabel}</button>
+        </div>
+      </div>
+
+      {page==="impressum" ? <Impressum/> : <Datenschutz/>}
+    </div>
+  );
+}
+
+function LegalStandalonePage({page, onOpenLegal, onBack}) {
+  return (
+    <div style={{maxWidth:760,margin:"0 auto",padding:appShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
+      <LegalPage page={page} onOpenLegal={onOpenLegal} onBack={onBack} backLabel="Zur Startseite"/>
+      <AppFooter onOpenLegal={onOpenLegal}/>
+    </div>
+  );
+}
+
+function AppFooter({onOpenLegal}) {
   const year = new Date().getFullYear();
   const linkStyle: CSSProperties = {
     color: "#0C447C",
@@ -2009,8 +2248,14 @@ function AppFooter() {
         </div>
         <div>
           <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Rechtliches</div>
-          <div style={{fontSize:13,color:"var(--color-text-secondary)",lineHeight:1.6}}>
-            Diese App ist derzeit als private, nicht-kommerzielle Anwendung gedacht, ohne eigene oeffentlich vermarktete Domain. Daten bleiben lokal im Browser; es gibt keinen Login und kein eingebautes Tracking. Wenn die App spaeter oeffentlich betrieben wird, muessen Impressum und Datenschutzhinweise erneut geprueft und ergaenzt werden.
+          <div style={{fontSize:13,lineHeight:1.8}}>
+            <button type="button" onClick={()=>onOpenLegal("impressum")} style={legalLinkButtonStyle}>Impressum</button>
+          </div>
+          <div style={{fontSize:13,lineHeight:1.8}}>
+            <button type="button" onClick={()=>onOpenLegal("datenschutz")} style={legalLinkButtonStyle}>Datenschutzerklärung</button>
+          </div>
+          <div style={{fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.6,marginTop:8}}>
+            Privates, nicht-kommerzielles Projekt. Daten bleiben lokal im Browser: kein Login, kein Tracking.
           </div>
         </div>
       </div>
@@ -2022,7 +2267,7 @@ function AppFooter() {
   );
 }
 
-function LandingPage({profile, onSave}) {
+function LandingPage({profile, onSave, onOpenLegal}) {
   const featureCardStyle: CSSProperties = {
     ...subtleCardStyle,
     padding: "18px 18px 20px",
@@ -2129,7 +2374,7 @@ function LandingPage({profile, onSave}) {
         </div>
       </div>
 
-      <AppFooter/>
+      <AppFooter onOpenLegal={onOpenLegal}/>
     </div>
   );
 }
@@ -2380,7 +2625,13 @@ export default function App() {
 
   const newRound = () => setForm({ date:new Date().toISOString().slice(0,10), mode:"Stableford", format:"Einzel", holes:18, submitted:false, markerSigned:false, nineHoleAllowed:false, playingHcp:displayHcp });
 
-  if (!db.profile.name) return <LandingPage profile={db.profile} onSave={saveProfile}/>;
+  // Impressum und Datenschutz muessen auch ohne Profil erreichbar sein, also vor der Landing Page.
+  if (!db.profile.name) {
+    if (isLegalView(view)) {
+      return <LegalStandalonePage page={view} onOpenLegal={setView} onBack={()=>setView("dashboard")}/>;
+    }
+    return <LandingPage profile={db.profile} onSave={saveProfile} onOpenLegal={setView}/>;
+  }
 
   const activeNavItem = NAV_ITEMS.find(item=>item.id===view);
   const contentMaxWidth = isDesktop ? (navCollapsed ? 1280 : 1080) : 760;
@@ -2399,7 +2650,7 @@ export default function App() {
         displayHcp={displayHcp}
       />
       <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
-        {!isDesktop && <MobileTopBar title={activeNavItem?.label ?? "Dashboard"} displayHcp={displayHcp} onOpenNav={()=>setNavOpen(true)} maxWidth={contentMaxWidth}/>}
+        {!isDesktop && <MobileTopBar title={activeNavItem?.label ?? LEGAL_VIEW_LABELS[view] ?? "Dashboard"} displayHcp={displayHcp} onOpenNav={()=>setNavOpen(true)} maxWidth={contentMaxWidth}/>}
         <div style={{maxWidth:contentMaxWidth,margin:"0 auto",padding:contentShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
           <div style={{...cardStyle,display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:18,gap:16,flexWrap:"wrap",padding:isDesktop?"22px 24px":"18px 20px",background:"linear-gradient(140deg, rgba(20,46,37,0.96) 0%, rgba(18,57,44,0.94) 45%, rgba(29,158,117,0.76) 100%)",color:"#fff",position:"relative",overflow:"hidden"}}>
             <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at top right, rgba(255,255,255,0.16), transparent 28%), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)",backgroundSize:"auto, 24px 24px",opacity:0.4,pointerEvents:"none"}}/>
@@ -2448,7 +2699,8 @@ export default function App() {
               return result.summary;
             }}
           />}
-          {view==="info" && <HcpInfo/>}
+          {view==="info" && <HcpInfo onOpenLegal={selectView}/>}
+          {isLegalView(view) && <LegalPage page={view} onOpenLegal={selectView} onBack={()=>selectView("dashboard")} backLabel="Zum Dashboard"/>}
 
           <UpdateAppPrompt/>
           <InstallAppPrompt/>
@@ -2463,7 +2715,7 @@ export default function App() {
             </div>
           </Modal>}
 
-          <AppFooter/>
+          <AppFooter onOpenLegal={selectView}/>
         </div>
       </div>
     </div>
