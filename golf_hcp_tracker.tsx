@@ -4316,8 +4316,8 @@ function LandingPage({profile, onSave, onOpenLegal}) {
               {t("Fordere deinen Flight heraus.","Challenge your flight.")}
             </h1>
             <p style={{fontSize:"clamp(16px, 2vw, 18px)",lineHeight:1.55,color:"rgba(255,255,255,0.86)",margin:"0 0 16px",maxWidth:520}}>
-              {t("Erzeuge Drucksituationen im Training, statt nur Bälle abzuschlagen. Unter Druck wird dein Spiel besser.",
-                 "Create pressure situations in practice instead of just hitting balls. Pressure is what makes your golf better.")}
+              {t("Erzeuge Drucksituationen im Training. Denn unter Druck lernst du mehr als auf der Range.",
+                 "Create pressure situations in practice. You learn more under pressure than on the range.")}
             </p>
             {!showDesktopShot && <div style={{margin:"0 0 16px"}}><HeroArt ratio="4 / 5"/></div>}
 

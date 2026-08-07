@@ -23,6 +23,9 @@ OUT = ROOT / "public" / "og-image.jpg"
 WIDTH, HEIGHT = 1200, 630
 IMAGE_WIDTH = 470          # Breite der Illustration am rechten Rand
 FADE_WIDTH = 150           # so weit laeuft ihr linker Rand ins Gruen aus
+
+HEADLINE = ["Fordere deinen", "Flight heraus."]
+SUBLINE = "Erzeuge Drucksituationen im Training. Denn unter Druck lernst du mehr als auf der Range."
 PAD = 64
 
 DARK = (10, 42, 33)
@@ -50,6 +53,23 @@ def gradient(size, top, bottom):
             round(top[channel] + (bottom[channel] - top[channel]) * ratio) for channel in range(3)
         ))
     return strip.resize((width, height))
+
+
+def wrap(draw, text: str, font_obj, max_width: int) -> list[str]:
+    """Bricht Text am Wortende, gemessen an der echten Textbreite."""
+    lines: list[str] = []
+    words = text.split()
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if draw.textlength(candidate, font=font_obj) <= max_width or not current:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
 
 
 def cover(image: Image.Image, box) -> Image.Image:
@@ -84,22 +104,26 @@ def main() -> None:
 
     # Schlagzeile, von Hand umbrochen – zwei Zeilen sitzen im Textfeld
     headline = font(BOLD, 62)
-    draw.text((PAD, 140), "Fordere deinen", font=headline, fill=WHITE)
-    draw.text((PAD, 212), "Flight heraus.", font=headline, fill=WHITE)
+    for index, line in enumerate(HEADLINE):
+        draw.text((PAD, 140 + index * 72), line, font=headline, fill=WHITE)
 
-    # Unterzeile
+    # Unterzeile – umgebrochen auf die Breite des Textfelds
     sub = font(REGULAR, 27)
-    draw.text((PAD, 306), "Erzeuge Drucksituationen im Training –", font=sub, fill=MUTED)
-    draw.text((PAD, 344), "unter Druck wird dein Spiel besser.", font=sub, fill=MUTED)
+    text_width = WIDTH - IMAGE_WIDTH - 2 * PAD + 40
+    y = 302
+    for line in wrap(draw, SUBLINE, sub, text_width):
+        draw.text((PAD, y), line, font=sub, fill=MUTED)
+        y += 38
 
-    # Merkmale als Pillen
+    # Merkmale als Pillen, direkt unter der Unterzeile
     chip_font = font(BOLD, 21)
     x = PAD
+    chip_top = y + 20
     for label in ["Fünf Spielformate", "Per QR-Code", "Kostenlos"]:
-        text_width = draw.textlength(label, font=chip_font)
-        box = (x, 406, x + text_width + 36, 452)
+        label_width = draw.textlength(label, font=chip_font)
+        box = (x, chip_top, x + label_width + 36, chip_top + 46)
         draw.rounded_rectangle(box, radius=23, fill=(23, 96, 73))
-        draw.text((x + 18, 417), label, font=chip_font, fill=(214, 240, 228))
+        draw.text((x + 18, chip_top + 11), label, font=chip_font, fill=(214, 240, 228))
         x = box[2] + 12
 
     # Fusszeile: Bildmarke, Name, Domain
