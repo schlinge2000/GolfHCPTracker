@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://wolfgolf.club/sitemap.xml
+Sitemap: https://www.wolfgolf.club/sitemap.xml
