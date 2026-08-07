@@ -3820,19 +3820,19 @@ const LANDING_SLIDES = [
   {
     id: "spiel",
     tab: { de:"Mit Freunden spielen", en:"Play with friends" },
-    eyebrow: { de:"Darum geht es", en:"What it is for" },
+    eyebrow: { de:"Druck erzeugen", en:"Put yourself under pressure" },
     lead: {
-      de:"Matchplay, Nassau mit Press, Skins mit Carry-over, Wolf und Bingo Bango Bongo – gleichzeitig auf denselben Schlägen, Loch für Loch mitgezählt.",
-      en:"Match play, Nassau with presses, skins with carry-over, Wolf and Bingo Bango Bongo – all at once, off the same shots, scored hole by hole.",
+      de:"Matchplay, Nassau mit Press, Skins mit Carry-over, Wolf und Bingo Bango Bongo – gleichzeitig auf denselben Schlägen. Jedes Loch spielt um etwas, also zählt jeder Putt.",
+      en:"Match play, Nassau with presses, skins with carry-over, Wolf and Bingo Bango Bongo – all at once, off the same shots. Every hole plays for something, so every putt counts.",
     },
     highlights: {
       de:[
-        "Fünf Spielformate parallel auf einer Runde",
+        "Fünf Spielformate parallel: kein Loch ohne Bedeutung",
         "Mitspieler per QR-Code eingeladen, ohne Abtippen",
         "Am Ende eine Abrechnung, über die niemand diskutiert",
       ],
       en:[
-        "Five game formats side by side on one round",
+        "Five formats at once: no hole without meaning",
         "Invite your playing partners by QR code, no typing",
         "One settlement at the end that nobody argues about",
       ],
@@ -4293,7 +4293,7 @@ function LandingPage({profile, onSave, onOpenLegal}) {
         <BrandMark size={38}/>
         <div style={{minWidth:0}}>
           <div style={{fontSize:16,fontWeight:650,lineHeight:1.2}}>The Wolf Golf Club</div>
-          <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>{t("Spielt gegeneinander. Mit der richtigen Vorgabe.","Play each other. With the right strokes.")}</div>
+          <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>{t("Spiel unter Druck. Mit der richtigen Vorgabe.","Golf under pressure. With the right strokes.")}</div>
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginLeft:"auto",alignItems:"center"}}>
           <nav aria-label={t("Bereiche","Sections")} style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
@@ -4324,8 +4324,12 @@ function LandingPage({profile, onSave, onOpenLegal}) {
           <div style={{flex:"1 1 380px",minWidth:0}}>
             <div style={{...eyebrowStyle,color:"rgba(255,255,255,0.68)"}}>The Wolf Golf Club</div>
             <h1 style={{fontSize:"clamp(29px, 4.6vw, 44px)",lineHeight:1.06,fontWeight:700,margin:"0 0 12px"}}>
-              {t("Spielt gegeneinander. Golf wird lustiger als je zuvor.","Play games with friends. Golf gets more fun than ever.")}
+              {t("Fordere deinen Flight heraus.","Challenge your flight.")}
             </h1>
+            <p style={{fontSize:"clamp(16px, 2vw, 18px)",lineHeight:1.55,color:"rgba(255,255,255,0.86)",margin:"0 0 16px",maxWidth:520}}>
+              {t("Erzeuge Drucksituationen im Training, statt nur Bälle abzuschlagen. Genau daran wird dein Golfspiel besser.",
+                 "Create pressure situations in practice instead of just hitting balls. That is what makes your golf better.")}
+            </p>
             {!showDesktopShot && <div style={{margin:"0 0 16px"}}><HeroScene ratio="16 / 9"/></div>}
 
             {/* Grid statt inline-flex: ein baseline-ausgerichteter inline-flex-Kasten
