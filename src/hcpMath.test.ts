@@ -336,3 +336,62 @@ describe("buildIndexTimeline reproduces the full golf.de progression (all 15 rou
     expect(steps[4].diff).toBe(30.4);    // final nach eigener -2
   });
 });
+
+// Vollständiger golf.de-Import "Hans-Jürgen Juretzek 07.08.2026" (20 Runden),
+// chronologisch älteste zuerst. Enthält genau einen Exceptional Score:
+// Runde vom 26.07.2026 (Index davor 31,8; Roh-Differenzial 24,6 -> 7,2 Schläge
+// darunter -> -1,0), der die betroffene Runde von 24,6 auf 23,6 senkt.
+// Wichtig: source + handicapIndexBefore markieren echte golf.de-Importe, für die
+// die Engine den von golf.de geführten HCPI-davor als Anker nutzt.
+const hjImport2026 = [
+  { nr: 20, holes: 9,  gbe: 51,  courseRating: 30.1, slopeRating: 100, handicapIndexBefore: 54.0, reportedSD: 51.9 },
+  { nr: 19, holes: 9,  gbe: 48,  courseRating: 30.1, slopeRating: 100, handicapIndexBefore: 50.9, reportedSD: 46.9 },
+  { nr: 18, holes: 18, gbe: 121, courseRating: 71.7, slopeRating: 130, handicapIndexBefore: 45.9, reportedSD: 41.9 },
+  { nr: 17, holes: 9,  gbe: 55,  courseRating: 34.5, slopeRating: 125, handicapIndexBefore: 41.9, reportedSD: 40.5 },
+  { nr: 16, holes: 18, gbe: 110, courseRating: 69.0, slopeRating: 124, handicapIndexBefore: 41.5, reportedSD: 36.4 },
+  { nr: 15, holes: 18, gbe: 118, courseRating: 71.7, slopeRating: 130, handicapIndexBefore: 38.5, reportedSD: 39.2 },
+  { nr: 14, holes: 18, gbe: 108, courseRating: 71.7, slopeRating: 130, handicapIndexBefore: 38.5, reportedSD: 30.6 },
+  { nr: 13, holes: 18, gbe: 113, courseRating: 71.7, slopeRating: 130, handicapIndexBefore: 34.5, reportedSD: 34.9 },
+  { nr: 12, holes: 9,  gbe: 61,  courseRating: 37.8, slopeRating: 129, handicapIndexBefore: 34.5, reportedSD: 38.4 },
+  { nr: 11, holes: 9,  gbe: 66,  courseRating: 37.8, slopeRating: 129, handicapIndexBefore: 34.5, reportedSD: 42.8 },
+  { nr: 10, holes: 9,  gbe: 55,  courseRating: 36.0, slopeRating: 134, handicapIndexBefore: 34.5, reportedSD: 34.1 },
+  { nr: 9,  holes: 18, gbe: 120, courseRating: 71.7, slopeRating: 130, handicapIndexBefore: 34.5, reportedSD: 41.0 },
+  { nr: 8,  holes: 9,  gbe: 53,  courseRating: 36.0, slopeRating: 134, handicapIndexBefore: 34.5, reportedSD: 32.4 },
+  { nr: 7,  holes: 18, gbe: 110, courseRating: 71.7, slopeRating: 130, handicapIndexBefore: 34.0, reportedSD: 32.3 },
+  { nr: 6,  holes: 9,  gbe: 50,  courseRating: 36.0, slopeRating: 134, handicapIndexBefore: 33.9, reportedSD: 29.6 },
+  { nr: 5,  holes: 18, gbe: 105, courseRating: 71.7, slopeRating: 130, handicapIndexBefore: 32.8, reportedSD: 27.9 },
+  { nr: 4,  holes: 9,  gbe: 54,  courseRating: 36.0, slopeRating: 134, handicapIndexBefore: 32.2, reportedSD: 32.1 },
+  { nr: 3,  holes: 18, gbe: 100, courseRating: 71.7, slopeRating: 130, handicapIndexBefore: 31.8, reportedSD: 23.6 },
+  { nr: 2,  holes: 18, gbe: 102, courseRating: 71.7, slopeRating: 130, handicapIndexBefore: 29.8, reportedSD: 26.3 },
+  { nr: 1,  holes: 9,  gbe: 52,  courseRating: 37.8, slopeRating: 129, handicapIndexBefore: 29.4, reportedSD: 28.9 },
+].map(r => ({ ...r, source: "golf.de-pdf" }));
+
+describe("golf.de import with an exceptional score (Hans-Jürgen 07.08.2026)", () => {
+  const steps = buildIndexTimeline(hjImport2026, 54);
+
+  it("derives (not copies) every SD equal to golf.de – incl. the exceptional round 24.6 -> 23.6", () => {
+    steps.forEach((step, i) => {
+      expect(step.diff).toBe(hjImport2026[i].reportedSD);
+    });
+    const exc = steps.find(s => s.round.nr === 3)!;
+    expect(exc.rawDiff).toBe(24.6); // Roh-Differenzial
+    expect(exc.diff).toBe(23.6);    // nach Exceptional-Reduktion -1
+  });
+
+  it("applies the -1 only to rounds in the window at the event time (Nr. 3..20), not the two newer ones", () => {
+    const reducedNrs = steps.filter(s => Math.abs(s.rawDiff - s.diff - 1.0) < 0.001).map(s => s.round.nr).sort((a,b)=>a-b);
+    expect(reducedNrs).toEqual([3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]);
+    const unreducedNrs = steps.filter(s => Math.abs(s.rawDiff - s.diff) < 0.001).map(s => s.round.nr).sort((a,b)=>a-b);
+    expect(unreducedNrs).toEqual([1,2]);
+  });
+
+  it("uses golf.de's HCPI-before as anchor for every round", () => {
+    steps.forEach((step, i) => {
+      expect(step.preRoundHcp).toBe(hjImport2026[i].handicapIndexBefore);
+    });
+  });
+
+  it("ends at the official golf.de HCPI of 28.9", () => {
+    expect(steps[steps.length - 1].hcpAfter).toBe(28.9);
+  });
+});
