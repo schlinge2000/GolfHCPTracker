@@ -24,12 +24,37 @@ export type CourseCard = {
   holeData?: { par: number; si: number }[];
 };
 
-export type ShareCard = PlayerCard | CourseCard;
+/**
+ * Ein komplettes Spiel-Setup zum Mitspielen auf dem eigenen Geraet. Uebertragen
+ * werden nur die Eingaben, nicht die abgeleiteten Werte: Course Handicaps und
+ * Vorgabenverteilung rechnet jedes Geraet aus denselben Zahlen selbst neu. Damit
+ * kommen alle zwangslaeufig auf dasselbe Ergebnis – Voraussetzung dafuer, dass
+ * ein Vergleich der Abrechnungen am Ende ueberhaupt etwas aussagt.
+ */
+export type GameCard = {
+  kind: "game";
+  date: string;
+  holeCount: 9 | 18;
+  course: Omit<CourseCard, "kind">;
+  formats: string[];
+  /** Positionen der beiden Kontrahenten in `players`, nur fuer Matchplay. */
+  matchup: number[];
+  handicap: { mode: string; percent: number };
+  stake: { skin: number; match: number; nassau: number; point: number };
+  players: { name: string; hcpIndex: number }[];
+};
+
+export type ShareCard = PlayerCard | CourseCard | GameCard;
+
+export const GAME_CARD_FORMATS = ["matchplay", "nassau", "skins", "wolf", "bbb"] as const;
+export const GAME_CARD_HANDICAP_MODES = ["difference", "full", "gross"] as const;
+const MAX_GAME_PLAYERS = 8;
 
 export const SHARE_CARD_VERSION = 1;
 
 const PLAYER_PARAM = "p";
 const COURSE_PARAM = "c";
+const GAME_PARAM = "g";
 
 function round1(value: number) {
   return Math.round(value * 10) / 10;
@@ -81,17 +106,57 @@ export function buildShareUrl(card: ShareCard, origin: string) {
     const payload = { v: SHARE_CARD_VERSION, n: card.name, i: round1(card.hcpIndex) };
     return `${base}/#${PLAYER_PARAM}=${encodePayload(payload)}`;
   }
-  const payload: Record<string, unknown> = {
+  if (card.kind === "course") {
+    return `${base}/#${COURSE_PARAM}=${encodePayload({v: SHARE_CARD_VERSION, ...packCourse(card)})}`;
+  }
+  const payload = {
     v: SHARE_CARD_VERSION,
-    n: card.name,
-    cr: card.courseRating,
-    sr: card.slopeRating,
-    par: card.par,
+    d: card.date,
+    hc: card.holeCount,
+    c: packCourse(card.course),
+    f: card.formats,
+    mu: card.matchup,
+    g: [card.handicap.mode, card.handicap.percent],
+    st: [card.stake.skin, card.stake.match, card.stake.nassau, card.stake.point],
+    pl: card.players.map(player => [player.name, round1(player.hcpIndex)]),
   };
-  if (card.tee) payload.te = card.tee;
-  if (card.holeCount) payload.hc = card.holeCount;
-  if (card.holeData?.length) Object.assign(payload, packHoles(card.holeData));
-  return `${base}/#${COURSE_PARAM}=${encodePayload(payload)}`;
+  return `${base}/#${GAME_PARAM}=${encodePayload(payload)}`;
+}
+
+function packCourse(course: Omit<CourseCard, "kind">) {
+  const payload: Record<string, unknown> = {
+    n: course.name,
+    cr: course.courseRating,
+    sr: course.slopeRating,
+    par: course.par,
+  };
+  if (course.tee) payload.te = course.tee;
+  if (course.holeCount) payload.hc = course.holeCount;
+  if (course.holeData?.length) Object.assign(payload, packHoles(course.holeData));
+  return payload;
+}
+
+function unpackCourse(raw: unknown): Omit<CourseCard, "kind"> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const payload = raw as Record<string, unknown>;
+  const name = text(payload.n);
+  const courseRating = num(payload.cr);
+  const slopeRating = num(payload.sr);
+  const par = num(payload.par);
+  if (!name || courseRating === null || slopeRating === null || par === null) return null;
+  if (slopeRating < 55 || slopeRating > 155) return null;
+
+  const course: Omit<CourseCard, "kind"> = { name, courseRating, slopeRating, par };
+  const tee = text(payload.te);
+  if (tee) course.tee = tee;
+  const holeCount = num(payload.hc);
+  if (holeCount === 9 || holeCount === 18) course.holeCount = holeCount;
+  const holes = unpackHoles(payload.p, payload.s);
+  if (holes) {
+    course.holeData = holes;
+    if (!course.holeCount) course.holeCount = holes.length === 9 ? 9 : 18;
+  }
+  return course;
 }
 
 function parsePayload(raw: string): Record<string, unknown> | null {
@@ -119,45 +184,90 @@ function text(value: unknown) {
 export function parseShareHash(hash: string): ShareCard | null {
   const raw = String(hash || "").replace(/^#/, "");
   if (!raw) return null;
-  const match = /^([pc])=([A-Za-z0-9\-_]+)$/.exec(raw);
+  const match = /^([pcg])=([A-Za-z0-9\-_]+)$/.exec(raw);
   if (!match) return null;
   const [, kind, encoded] = match;
   const payload = parsePayload(encoded);
   if (!payload) return null;
   if (num(payload.v) !== SHARE_CARD_VERSION) return null;
 
-  const name = text(payload.n);
-  if (!name) return null;
-
   if (kind === PLAYER_PARAM) {
+    const name = text(payload.n);
     const hcpIndex = num(payload.i);
+    if (!name) return null;
     if (hcpIndex === null || hcpIndex < -10 || hcpIndex > 54) return null;
     return { kind: "player", name, hcpIndex: round1(hcpIndex) };
   }
 
-  const courseRating = num(payload.cr);
-  const slopeRating = num(payload.sr);
-  const par = num(payload.par);
-  if (courseRating === null || slopeRating === null || par === null) return null;
-  if (slopeRating < 55 || slopeRating > 155) return null;
-
-  const card: CourseCard = { kind: "course", name, courseRating, slopeRating, par };
-  const tee = text(payload.te);
-  if (tee) card.tee = tee;
-  const holeCount = num(payload.hc);
-  if (holeCount === 9 || holeCount === 18) card.holeCount = holeCount;
-  const holes = unpackHoles(payload.p, payload.s);
-  if (holes) {
-    card.holeData = holes;
-    if (!card.holeCount) card.holeCount = holes.length === 9 ? 9 : 18;
+  if (kind === COURSE_PARAM) {
+    const course = unpackCourse(payload);
+    return course ? { kind: "course", ...course } : null;
   }
-  return card;
+
+  return parseGamePayload(payload);
+}
+
+function parseGamePayload(payload: Record<string, unknown>): GameCard | null {
+  const course = unpackCourse(payload.c);
+  if (!course) return null;
+
+  const holeCount = num(payload.hc);
+  if (holeCount !== 9 && holeCount !== 18) return null;
+
+  const rawPlayers = Array.isArray(payload.pl) ? payload.pl : [];
+  const players = rawPlayers.slice(0, MAX_GAME_PLAYERS).map(entry => {
+    const pair = Array.isArray(entry) ? entry : [];
+    const name = text(pair[0]);
+    const hcpIndex = num(pair[1]);
+    return name && hcpIndex !== null && hcpIndex >= -10 && hcpIndex <= 54
+      ? { name, hcpIndex: round1(hcpIndex) }
+      : null;
+  });
+  if (players.length < 2 || players.some(player => player === null)) return null;
+
+  const formats = (Array.isArray(payload.f) ? payload.f : [])
+    .map(format => String(format))
+    .filter(format => (GAME_CARD_FORMATS as readonly string[]).includes(format));
+  if (!formats.length) return null;
+
+  const rawHandicap = Array.isArray(payload.g) ? payload.g : [];
+  const mode = String(rawHandicap[0] ?? "");
+  if (!(GAME_CARD_HANDICAP_MODES as readonly string[]).includes(mode)) return null;
+  const percent = num(rawHandicap[1]);
+  if (percent === null || percent < 0 || percent > 100) return null;
+
+  const rawStake = Array.isArray(payload.st) ? payload.st : [];
+  const [skin, match, nassau, point] = [0, 1, 2, 3].map(index => {
+    const value = num(rawStake[index]);
+    return value === null || value < 0 ? 1 : value;
+  });
+
+  const matchup = (Array.isArray(payload.mu) ? payload.mu : [])
+    .map(index => num(index))
+    .filter((index): index is number => index !== null && Number.isInteger(index) && index >= 0 && index < players.length);
+  if (formats.includes("matchplay") && matchup.length !== 2) return null;
+
+  return {
+    kind: "game",
+    date: text(payload.d) || new Date().toISOString().slice(0, 10),
+    holeCount,
+    course,
+    formats,
+    matchup: matchup.length === 2 ? matchup : [],
+    handicap: { mode, percent },
+    stake: { skin, match, nassau, point },
+    players: players as { name: string; hcpIndex: number }[],
+  };
 }
 
 /** Kurzbeschreibung für den Übernehmen-Dialog. */
 export function describeShareCard(card: ShareCard) {
   if (card.kind === "player") {
     return `${card.name} · HCP-Index ${card.hcpIndex.toFixed(1).replace(".", ",")}`;
+  }
+  if (card.kind === "game") {
+    const formats = card.formats.length === 1 ? "1 Format" : `${card.formats.length} Formate`;
+    return `${card.course.name} · ${card.holeCount} Loch · ${card.players.length} Spieler · ${formats}`;
   }
   const parts = [`CR ${card.courseRating}`, `SR ${card.slopeRating}`, `Par ${card.par}`];
   if (card.tee) parts.push(card.tee);

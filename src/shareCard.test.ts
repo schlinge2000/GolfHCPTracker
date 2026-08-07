@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildShareUrl, describeShareCard, parseShareHash, type CourseCard, type PlayerCard } from "./shareCard";
+import { buildShareUrl, describeShareCard, parseShareHash, type CourseCard, type GameCard, type PlayerCard } from "./shareCard";
 
 const ORIGIN = "https://wolfgolf.club";
 
@@ -117,5 +117,75 @@ describe("describeShareCard", () => {
     expect(describeShareCard({ kind: "player", name: "Ben", hcpIndex: 20.4 })).toBe("Ben · HCP-Index 20,4");
     expect(describeShareCard({ kind: "course", name: "GC Test", courseRating: 71.2, slopeRating: 128, par: 72, tee: "Gelb", holeData: holes18 }))
       .toBe("GC Test · CR 71.2 · SR 128 · Par 72 · Gelb · mit Scorekarte");
+  });
+});
+
+describe("Spielkarte", () => {
+  const card: GameCard = {
+    kind: "game",
+    date: "2026-08-07",
+    holeCount: 18,
+    course: {
+      name: "GC Haus Kambach",
+      courseRating: 71.2,
+      slopeRating: 128,
+      par: 72,
+      tee: "Gelb",
+      holeCount: 18,
+      holeData: holes18,
+    },
+    formats: ["matchplay", "skins"],
+    matchup: [0, 1],
+    handicap: { mode: "difference", percent: 100 },
+    stake: { skin: 2, match: 5, nassau: 1, point: 1 },
+    players: [
+      { name: "Alex", hcpIndex: 18 },
+      { name: "Ben", hcpIndex: 20.4 },
+    ],
+  };
+
+  it("überträgt das komplette Setup", () => {
+    expect(parseShareHash(hashOf(buildShareUrl(card, ORIGIN)))).toEqual(card);
+  });
+
+  it("bleibt klein genug für einen scanbaren QR-Code", () => {
+    expect(buildShareUrl(card, ORIGIN).length).toBeLessThan(700);
+  });
+
+  it("überträgt keine abgeleiteten Werte – Course Handicaps rechnet jedes Gerät selbst", () => {
+    const url = buildShareUrl(card, ORIGIN);
+    const payload = JSON.parse(atob(url.slice(url.indexOf("#g=") + 3).replace(/-/g, "+").replace(/_/g, "/") + "=="));
+    expect(JSON.stringify(payload)).not.toContain("courseHandicap");
+    // Nur Name und Index je Spieler.
+    expect(payload.pl).toEqual([["Alex", 18], ["Ben", 20.4]]);
+  });
+
+  it("verlangt bei Matchplay genau zwei Kontrahenten", () => {
+    const ohneMatchup = parseShareHash(hashOf(buildShareUrl({ ...card, matchup: [0] }, ORIGIN)));
+    expect(ohneMatchup).toBeNull();
+  });
+
+  it("kommt ohne Matchplay auch ohne Kontrahenten aus", () => {
+    const nurSkins: GameCard = { ...card, formats: ["skins"], matchup: [] };
+    expect(parseShareHash(hashOf(buildShareUrl(nurSkins, ORIGIN)))).toEqual(nurSkins);
+  });
+
+  it("weist unbekannte Formate und Vorgabemodi ab", () => {
+    expect(parseShareHash(hashOf(buildShareUrl({ ...card, formats: ["poker"], matchup: [] }, ORIGIN)))).toBeNull();
+    expect(parseShareHash(hashOf(buildShareUrl({ ...card, handicap: { mode: "erfunden", percent: 100 } }, ORIGIN)))).toBeNull();
+  });
+
+  it("weist Spiele mit weniger als zwei Spielern ab", () => {
+    expect(parseShareHash(hashOf(buildShareUrl({ ...card, players: [{ name: "Alex", hcpIndex: 18 }], matchup: [] }, ORIGIN)))).toBeNull();
+  });
+
+  it("nimmt bis zu acht Spieler und schneidet darüber ab", () => {
+    const viele = Array.from({ length: 12 }, (_, i) => ({ name: `Spieler ${i + 1}`, hcpIndex: 20 }));
+    const parsed = parseShareHash(hashOf(buildShareUrl({ ...card, players: viele, formats: ["skins"], matchup: [] }, ORIGIN))) as GameCard;
+    expect(parsed.players).toHaveLength(8);
+  });
+
+  it("beschreibt das Spiel für den Übernehmen-Dialog", () => {
+    expect(describeShareCard(card)).toBe("GC Haus Kambach · 18 Loch · 2 Spieler · 2 Formate");
   });
 });
