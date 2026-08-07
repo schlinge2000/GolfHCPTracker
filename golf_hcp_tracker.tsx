@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperti
 import { createPortal } from "react-dom";
 import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
-import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline } from "./src/hcpMath";
+import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline, parseHandicapIndex } from "./src/hcpMath";
 import { suggestHoles, normalizeHoles, totalPar, buildAllocations, scoreMatchplay, scoreSkins, scoreNassau, scoreWolf, scoreBingoBangoBongo, nassauSegments, BBB_AWARDS, stablefordFromHoles, playedHoleCount, DEFAULT_HANDICAP_CONFIG } from "./src/gameMath";
 import { fetchUsageStats, isUsagePingEnabled, setUsagePingEnabled, whenUsagePingSettled, USAGE_ID_RETENTION_DAYS, type UsageStats } from "./src/usagePing";
 
@@ -703,7 +703,7 @@ function getLatestRoundDate(rounds) {
 
 function buildHandicapTimeline(rounds, startHcp) {
   const eligibleRounds = [...rounds].filter(isHcpEligible).sort(sortRoundsChronologically);
-  const start = Math.min(54, Math.max(0, parseFloat(startHcp) || 54));
+  const start = Math.min(54, Math.max(0, parseHandicapIndex(startHcp)));
   // Chronologische WHS-Engine: Rohdifferenzial -> Exceptional-Score-Reduktion
   // zum Ereigniszeitpunkt -> Bremse. Dadurch stimmen auch die historischen
   // Zwischenstände und nicht nur der aktuelle Index.
@@ -3139,6 +3139,7 @@ function HcpInfo({onOpenLegal}) {
         {p("Beispiel: GBE 95, CR 72.0, SR 130 → (95 − 72) × 113 ÷ 130 = 20.0")}
         {p("Im vollständigen WHS wird zusätzlich die Platzverhältnis-Korrektur PCC abgezogen: Differenzial = (GBE − Course Rating − PCC) × 113 ÷ Slope Rating. Die App berechnet das Differenzial selbst aus GBE, Course Rating und Slope und rechnet dabei mit PCC = 0 (Details siehe „Weitere WHS-Anpassungen“).")}
         {formula("9-Loch: tatsächliches 9-Loch-Differenzial\n= (GBE − Course Rating) × 113 ÷ Slope Rating\n\n18-Loch-Wert = 9-Loch-Differenzial + erwartetes 9-Loch-Differenzial\naus dem aktuellen Handicap Index")}
+        {p("Das erwartete Differenzial für die zweiten neun Löcher entnimmt das WHS einer veröffentlichten Tabelle, die aus einer modellierten Score-Verteilung stammt. Diese App nutzt dafür eine lineare Annäherung (erwartetes 18-Loch-Differenzial = 1,04 × Index + 2,4, halbiert). Bei 9-Loch-Runden kann der Wert deshalb leicht von der offiziellen Rechnung abweichen; 18-Loch-Runden sind davon nicht betroffen.")}
       </>)}
 
       {card(<>
@@ -3579,8 +3580,8 @@ const LANDING_DETAILS = [
     text: "Über einem Index von 26,9 geht es nur nach unten: Ein erspielter Wert wird nicht wieder angehoben, auch wenn danach schwächere Runden folgen. Erst darunter bewegt sich der Index in beide Richtungen.",
   },
   {
-    title: "9-Loch-Runden korrekt umgerechnet",
-    text: "Das tatsächliche 9-Loch-Differenzial wird mit dem erwarteten 9-Loch-Differenzial aus deinem aktuellen Index zu einem 18-Loch-Wert ergänzt – nicht einfach verdoppelt.",
+    title: "9-Loch-Runden ergänzt statt verdoppelt",
+    text: "Das tatsächliche 9-Loch-Differenzial wird um den erwarteten Wert für die zweiten neun Löcher ergänzt, abgeleitet aus deinem aktuellen Index – nicht einfach mit zwei multipliziert. Wie genau, steht in der HCP-Info.",
   },
   {
     title: "Course Rating und Slope pro Abschlag",
