@@ -1,13 +1,15 @@
-const CACHE_NAME = 'golf-hcp-tracker-v2';
+const CACHE_NAME = 'wolf-golf-v1';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
+  '/favicon.svg',
   '/favicon-16.png',
   '/favicon-32.png',
   '/apple-touch-icon.png',
   '/pwa-192.png',
   '/pwa-512.png',
+  '/pwa-maskable-512.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -35,6 +37,9 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+
+  // Zaehler-Endpoint nie cachen, sonst liefert die App veraltete Zahlen.
+  if (url.pathname.startsWith('/api/')) return;
 
   if (event.request.mode === 'navigate') {
     event.respondWith((async () => {

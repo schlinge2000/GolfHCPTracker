@@ -1,5 +1,5 @@
 {
-  "name": "golf-hcp-tracker",
+  "name": "wolf-golf",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@netlify/blobs": "^10.7.12",
     "pdfjs-dist": "5.6.205",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

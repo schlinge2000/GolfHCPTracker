@@ -3,12 +3,10 @@
 # ueberschreiben – wer sie in den Code holen will, traegt hier
 # command = "pnpm run build" und publish = "dist" nach.
 
-# Single-Page-App: unbekannte Pfade auf die index.html ausliefern, ohne Redirect.
-# Vorhandene Dateien (Assets, Bilder, robots.txt) gehen vor und werden nicht angefasst.
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+# Absichtlich kein Catch-all-Rewrite auf die index.html: Die App kennt keine Routen
+# (auch Impressum und Datenschutz sind Zustand, keine URL), und eine Regel fuer "/*"
+# koennte den Zaehl-Endpoint /api/usage verschatten, den die Netlify-Function ueber
+# ihren config.path bereitstellt.
 
 [[headers]]
   for = "/*"
