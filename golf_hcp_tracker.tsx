@@ -1609,7 +1609,7 @@ function CourseForm({initial, rounds, startHcp, onSave, onCancel}) {
       <div style={{display:"flex",gap:8}}>
         <button onClick={()=>{if(!c.name) return alert(t("Name erforderlich","A name is required")); onSave(c);}}
           style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:500,fontSize:14}}>{t("Speichern","Save")}</button>
-        <button onClick={onCancel} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:"0.5px solid var(--color-border-tertiary)",cursor:"pointer",fontSize:14,color:"var(--color-text-primary)"}}>Abbrechen</button>
+        <button onClick={onCancel} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:"0.5px solid var(--color-border-tertiary)",cursor:"pointer",fontSize:14,color:"var(--color-text-primary)"}}>{t("Abbrechen","Cancel")}</button>
       </div>
     </div>
   );
@@ -1805,11 +1805,23 @@ function ShareCardPanel({card, hint}) {
 }
 
 
-const CAMERA_HINTS: Record<CameraFailure, string> = {
-  denied: "Die Kamera ist blockiert. Du kannst sie in den Browser-Einstellungen für diese Seite freigeben – oder den Link unten einfügen.",
-  notfound: "Keine Kamera gefunden. Nimm den Weg über den Link.",
-  unsupported: "Dieser Browser gibt die Kamera nicht frei. Nimm den Weg über den Link.",
-  error: "Die Kamera lässt sich gerade nicht öffnen. Nimm den Weg über den Link.",
+const CAMERA_HINTS: Record<CameraFailure, { de: string; en: string }> = {
+  denied: {
+    de: "Die Kamera ist blockiert. Du kannst sie in den Browser-Einstellungen für diese Seite freigeben – oder den Link unten einfügen.",
+    en: "The camera is blocked. You can allow it for this site in your browser settings – or paste the link below.",
+  },
+  notfound: {
+    de: "Keine Kamera gefunden. Nimm den Weg über den Link.",
+    en: "No camera found. Use the link instead.",
+  },
+  unsupported: {
+    de: "Dieser Browser gibt die Kamera nicht frei. Nimm den Weg über den Link.",
+    en: "This browser does not grant camera access. Use the link instead.",
+  },
+  error: {
+    de: "Die Kamera lässt sich gerade nicht öffnen. Nimm den Weg über den Link.",
+    en: "The camera cannot be opened right now. Use the link instead.",
+  },
 };
 
 /**
@@ -1818,6 +1830,7 @@ const CAMERA_HINTS: Record<CameraFailure, string> = {
  * auch fuer alle, die den Code lieber per Nachricht schicken.
  */
 function QrScanDialog({title, hint, onDetect, onClose, accepts}) {
+  const t = useT();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [failure, setFailure] = useState<CameraFailure | null>(isCameraSupported() ? null : "unsupported");
@@ -1825,11 +1838,11 @@ function QrScanDialog({title, hint, onDetect, onClose, accepts}) {
   const [problem, setProblem] = useState("");
 
   const handleCard = card => {
-    if (!card) { setProblem("Darin steckt keine Karte von Wolf Golf."); return false; }
+    if (!card) { setProblem(t("Darin steckt keine Karte vom Wolf Golf Club.","That does not contain a Wolf Golf Club card.")); return false; }
     if (accepts && !accepts.includes(card.kind)) {
       setProblem(card.kind === "game"
-        ? "Das ist eine Spielkarte – die öffnest du über den Link, sie legt ein eigenes Spiel an."
-        : "Diese Karte passt hier nicht.");
+        ? t("Das ist eine Spielkarte – die öffnest du über den Link, sie legt ein eigenes Spiel an.","That is a game card – open it through the link, it creates a game of its own.")
+        : t("Diese Karte passt hier nicht.","That card does not fit here."));
       return false;
     }
     setProblem("");
@@ -1884,7 +1897,7 @@ function QrScanDialog({title, hint, onDetect, onClose, accepts}) {
 
       {failure ? (
         <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:14,background:"linear-gradient(180deg, rgba(255,247,233,0.98) 0%, rgba(255,251,243,0.96) 100%)",border:"1px solid rgba(190,120,20,0.28)",fontSize:13,lineHeight:1.6,color:"#6B4310"}}>
-          {CAMERA_HINTS[failure]}
+          {t(CAMERA_HINTS[failure])}
         </div>
       ) : (
         <div style={{position:"relative",borderRadius:"var(--border-radius-md)",overflow:"hidden",background:"#111",marginBottom:14,aspectRatio:"4 / 3"}}>
@@ -1895,15 +1908,15 @@ function QrScanDialog({title, hint, onDetect, onClose, accepts}) {
       <canvas ref={canvasRef} style={{display:"none"}}/>
 
       <div style={{borderTop:"1px solid var(--color-border-tertiary)",paddingTop:14}}>
-        <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>Oder Link einfügen</div>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>{t("Oder Link einfügen","Or paste a link")}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8}}>
           <input
             style={inp}
             value={manual}
             onChange={e=>{ setManual(e.target.value); setProblem(""); }}
-            placeholder="https://wolfgolf.club/#p=…"
+            placeholder="https://www.wolfgolf.club/#p=…"
           />
-          <button type="button" onClick={()=>handleCard(parseShareLink(manual))} style={{...gamesGhostBtn,padding:"10px 14px"}}>Lesen</button>
+          <button type="button" onClick={()=>handleCard(parseShareLink(manual))} style={{...gamesGhostBtn,padding:"10px 14px"}}>{t("Lesen","Read")}</button>
         </div>
         {problem && <div style={{fontSize:13,color:"#E24B4A",marginTop:8}}>{problem}</div>}
       </div>
@@ -2442,21 +2455,22 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
           <input style={inp} value={newName} onChange={e=>setNewName(e.target.value)} placeholder={t("Mitspieler hinzufügen","Add a player")}/>
           <input type="number" step="0.1" style={inp} value={newHcp} onChange={e=>setNewHcp(e.target.value)} placeholder="HCP"/>
           <button type="button" onClick={addPlayer} style={{...gamesGhostBtn,padding:"10px 14px"}}>+</button>
-          <button type="button" onClick={()=>setScanning(true)} style={{...gamesGhostBtn,padding:"10px 14px",gridColumn:"1 / -1"}}>Spielerkarte scannen</button>
+          <button type="button" onClick={()=>setScanning(true)} style={{...gamesGhostBtn,padding:"10px 14px",gridColumn:"1 / -1"}}>{t("Spielerkarte scannen","Scan a player card")}</button>
         </div>
       </div>, t("Mitspieler bleiben für die nächsten Spiele gespeichert","Players stay saved for your next games"))}
 
       {scanning && (
         <QrScanDialog
-          title="Karte scannen"
-          hint="Halte die Kamera auf die Spielerkarte deines Mitspielers – oder auf eine Platzkarte. Der Gescannte wird direkt für dieses Spiel ausgewählt, deine bisherigen Eingaben bleiben erhalten."
+          title={t("Karte scannen","Scan a card")}
+          hint={t("Halte die Kamera auf die Spielerkarte deines Mitspielers – oder auf eine Platzkarte. Der Gescannte wird direkt für dieses Spiel ausgewählt, deine bisherigen Eingaben bleiben erhalten.",
+                  "Point the camera at your partner's player card – or at a course card. Whoever you scan is selected for this game right away, and your entries so far are kept.")}
           accepts={["player", "course"]}
           onDetect={takeScannedCard}
           onClose={()=>setScanning(false)}
         />
       )}
 
-      {field("Spielformate", <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {field(t("Spielformate","Game formats"), <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {GAME_FORMATS.map(format=>(
           <label key={format.id} style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer",padding:"10px 12px",borderRadius:"var(--border-radius-md)",border:`1px solid ${formats.includes(format.id)?"rgba(29,158,117,0.4)":"var(--color-border-tertiary)"}`,background:formats.includes(format.id)?"#ecfbf4":"rgba(255,255,255,0.9)"}}>
             <input type="checkbox" checked={formats.includes(format.id)} onChange={()=>toggleFormat(format.id)} style={{marginTop:2}}/>
