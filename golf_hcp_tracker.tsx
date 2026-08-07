@@ -3684,8 +3684,10 @@ const LANDING_THEMES = [
     lead: "Dieselben Schläge, mehrere Wetten parallel: Loch für Loch mitgezählt, am Ende eine Abrechnung, über die niemand diskutiert.",
     points: [
       ["Fünf Spielformate", "Matchplay, Nassau mit Press, Skins mit Carry-over, Wolf und Bingo Bango Bongo – gleichzeitig auf denselben Scores."],
+      ["Per QR-Code eingeladen", "Mitspieler zeigen ihre Spielerkarte, du scannst sie mit der Kamera – Name und aktueller Index sind da, ohne Abtippen. Auch der Platz samt Scorekarte und das ganze Spiel-Setup wandern so von Gerät zu Gerät."],
       ["Netto mit der richtigen Vorgabe", "Weil dein Index stimmt, stimmt auch die Vorgabe: Der 28er hat gegen den 12er eine echte Chance statt einer rechnerischen."],
       ["Abrechnung in Punkten", "Die App zählt Punkte und verrechnet sie auf möglichst wenige Ausgleiche. Was ein Punkt wert ist, macht der Flight unter sich aus."],
+      ["Jeder schreibt mit, alle vergleichen", "Teilt das Spiel, dann läuft es auf jedem Telefon mit identischem Setup. Am Ende haltet ihr die Abrechnungen nebeneinander – Tippfehler fallen sofort auf."],
       ["Aus dem Spiel wird eine Runde", "Am Ende übernimmst du dein Ergebnis mit einem Klick als HCP-wirksame Runde – zurück zu Kapitel 1."],
     ],
   },
@@ -3729,7 +3731,7 @@ const LANDING_FAQ = [
   },
   {
     q: "Wo liegen meine Daten, und was kostet das?",
-    a: "Die App ist kostenlos, ohne Werbung und ohne Konto. Runden, Plätze und Spiele liegen im Speicher deines Browsers auf deinem Gerät und werden nirgendwohin synchronisiert; ein JSON-Export im Bereich „Daten“ dient als Backup. Übertragen wird nur eine zufällige Installations-ID für den anonymen Nutzungszähler – abschaltbar unter „HCP-Info“, Details in der Datenschutzerklärung.",
+    a: "Die App ist kostenlos, ohne Werbung und ohne Konto. Runden, Plätze und Spiele liegen im Speicher deines Browsers auf deinem Gerät und werden nirgendwohin synchronisiert; ein JSON-Export im Bereich „Daten“ dient als Backup. Auch das Teilen per QR-Code läuft direkt von Gerät zu Gerät: Die Daten stecken hinter dem Rautezeichen des Links, und den Teil sendet ein Browser nie an einen Server. Übertragen wird lediglich eine zufällige Installations-ID für den anonymen Nutzungszähler – abschaltbar unter „HCP-Info“, Details in der Datenschutzerklärung.",
   },
 ];
 
@@ -3810,7 +3812,8 @@ function LandingPage({profile, onSave, onOpenLegal}) {
           <p style={{fontSize:"clamp(16px, 2vw, 18px)",lineHeight:1.6,color:"rgba(255,255,255,0.82)",margin:"0 0 22px",maxWidth:640}}>
             Nach jeder Runde steht dein neuer Index – erklärt, nicht nur ausgerechnet. Und weil er stimmt, wird die
             nächste Runde mit Freunden zum echten Wettkampf: Matchplay, Nassau, Skins, Wolf und Bingo Bango Bongo,
-            alle mit der richtigen Vorgabe. Kein Verein, kein Beitrag – trotzdem ein Club.
+            alle mit der richtigen Vorgabe und den Mitspielern per QR-Code eingeladen. Kein Verein, kein Beitrag –
+            trotzdem ein Club.
           </p>
           <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:22}}>
             <button type="button" onClick={()=>scrollTo(startRef)} style={primaryButtonStyle}>Kostenlos starten</button>
