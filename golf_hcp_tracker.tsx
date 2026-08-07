@@ -881,11 +881,11 @@ function UpdateAppPrompt() {
   );
 }
 
-function Modal({title, children, onClose}) {
+function Modal({title, children, onClose, maxWidth=520}) {
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:100,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"max(24px, calc(env(safe-area-inset-top) + 16px)) max(16px, calc(env(safe-area-inset-right) + 12px)) max(24px, calc(env(safe-area-inset-bottom) + 16px)) max(16px, calc(env(safe-area-inset-left) + 12px))",overflowY:"auto"}}
       onClick={e=>{if(e.target===e.currentTarget) onClose();}}>
-      <div style={{...cardStyle,padding:"20px 24px",width:"100%",maxWidth:520}}>
+      <div style={{...cardStyle,padding:"20px 24px",width:"100%",maxWidth}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <div style={{fontWeight:500,fontSize:16,color:"#111"}}>{title}</div>
           <button onClick={onClose} style={{background:"transparent",border:"none",cursor:"pointer",fontSize:18,color:"#888",lineHeight:1}}>×</button>
@@ -896,67 +896,114 @@ function Modal({title, children, onClose}) {
   );
 }
 
-function ScoreChart({data, projectedStartIndex=null}) {
-  const w=680,h=200,pad={t:16,r:20,b:32,l:44};
-  const diffs=data.map(d=>d.diff).filter(x=>x!==null);
-  if (!diffs.length) return null;
-  const min=Math.min(...diffs)-2, max=Math.max(...diffs)+2;
-  const dates=data.map(d=>new Date(d.date).getTime());
-  const tMin=Math.min(...dates), tMax=Math.max(...dates);
-  const sx=t=>tMax===tMin ? pad.l : pad.l+((t-tMin)/(tMax-tMin))*(w-pad.l-pad.r);
-  const sy=v=>pad.t+((max-v)/(max-min))*(h-pad.t-pad.b);
-  const visible=data.filter(d=>d.diff!==null);
-  const actualVisible = projectedStartIndex===null ? visible : visible.slice(0, projectedStartIndex);
-  const projectedVisible = projectedStartIndex===null ? [] : visible.slice(Math.max(0, projectedStartIndex-1));
-  const actualPts=actualVisible.map(d=>`${sx(new Date(d.date).getTime())},${sy(d.diff)}`).join(" ");
-  const projectedPts=projectedVisible.map(d=>`${sx(new Date(d.date).getTime())},${sy(d.diff)}`).join(" ");
+// Berechnet gerundete ("schöne") Achsengrenzen und Ticks, die sich eng an die
+// tatsächlichen Werte anlegen.
+function niceTicks(dataMin, dataMax, count=4) {
+  if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax)) return {min:0,max:1,ticks:[0,1]};
+  if (dataMin===dataMax) { dataMin-=1; dataMax+=1; }
+  const rawStep=(dataMax-dataMin)/Math.max(1,count);
+  const mag=Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm=rawStep/mag;
+  const step=(norm<1.5?1:norm<3?2:norm<7?5:10)*mag;
+  const min=Math.floor(dataMin/step)*step;
+  const max=Math.ceil(dataMax/step)*step;
+  const ticks=[];
+  for (let v=min; v<=max+step*0.5; v+=step) ticks.push(Math.round(v*100)/100);
+  return {min, max, ticks};
+}
+
+// Gemeinsame, responsive Linien-Chart-Basis mit Grid, projizierter (gestrichelter)
+// Linie und – im interaktiven Modus – Tooltips beim Überfahren/Antippen der Punkte.
+function LineChart({points, lineColor=COLORS.hcp, projectedColor="#C56B1A", width=680, height=200, interactive=false, valueFormat=(v)=>`${v}`}) {
+  const [hover, setHover] = useState(null);
+  const pad={t:16,r:20,b:32,l:44};
+  const vals=points.map(p=>p.value);
+  if (!vals.length) return null;
+  // y-Achse passt sich an die (gefensterten) Werte an – mit gerundeten Grenzen/Ticks.
+  const {min, max, ticks}=niceTicks(Math.min(...vals), Math.max(...vals), 4);
+  const fmtTick=v=>Number.isInteger(v)?String(v):v.toFixed(1);
+  const times=points.map(p=>p.date);
+  const tMin=Math.min(...times), tMax=Math.max(...times);
+  const sx=t=>tMax===tMin ? pad.l+(width-pad.l-pad.r)/2 : pad.l+((t-tMin)/(tMax-tMin))*(width-pad.l-pad.r);
+  const sy=v=>pad.t+((max-v)/((max-min)||1))*(height-pad.t-pad.b);
+  const firstProjected = points.findIndex(p=>p.projected);
+  const actualPts=(firstProjected===-1 ? points : points.slice(0, firstProjected)).map(p=>`${sx(p.date)},${sy(p.value)}`).join(" ");
+  const projectedPts=firstProjected===-1 ? "" : points.slice(Math.max(0,firstProjected-1)).map(p=>`${sx(p.date)},${sy(p.value)}`).join(" ");
   const fmt=t=>new Date(t).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"2-digit"});
+  const hp = hover!==null ? points[hover] : null;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} style={{width:"100%",height:"auto",display:"block"}}>
-      {[Math.ceil(min),Math.round((min+max)/2),Math.floor(max)].map(v=>(
-        <g key={v}>
-          <line x1={pad.l} x2={w-pad.r} y1={sy(v)} y2={sy(v)} stroke="#D3D1C7" strokeWidth={0.5}/>
-          <text x={pad.l-6} y={sy(v)+4} fontSize={10} textAnchor="end" fill="#888">{v}</text>
+    <svg viewBox={`0 0 ${width} ${height}`} style={{width:"100%",height:"auto",display:"block"}} onMouseLeave={()=>setHover(null)}>
+      {ticks.map((v,i)=>(
+        <g key={i}>
+          <line x1={pad.l} x2={width-pad.r} y1={sy(v)} y2={sy(v)} stroke="#D3D1C7" strokeWidth={0.5}/>
+          <text x={pad.l-6} y={sy(v)+4} fontSize={10} textAnchor="end" fill="#888">{fmtTick(v)}</text>
         </g>
       ))}
-      {actualPts && <polyline points={actualPts} fill="none" stroke={COLORS.hcp} strokeWidth={1.5}/>}
-      {projectedPts && <polyline points={projectedPts} fill="none" stroke="#C56B1A" strokeWidth={1.5} strokeDasharray="5 4"/>}
-      {visible.map((d,i)=>(
-        <circle key={i} cx={sx(new Date(d.date).getTime())} cy={sy(d.diff)} r={3} fill={projectedStartIndex!==null && i>=projectedStartIndex ? "#C56B1A" : d.mode==="Stableford"?COLORS.stableford:COLORS.stroke}/>
+      {hp && <line x1={sx(hp.date)} x2={sx(hp.date)} y1={pad.t} y2={height-pad.b} stroke="#B4B2A9" strokeWidth={0.5} strokeDasharray="3 3"/>}
+      {actualPts && <polyline points={actualPts} fill="none" stroke={lineColor} strokeWidth={1.8}/>}
+      {projectedPts && <polyline points={projectedPts} fill="none" stroke={projectedColor} strokeWidth={1.8} strokeDasharray="5 4"/>}
+      {points.map((p,i)=>(
+        <circle key={i} cx={sx(p.date)} cy={sy(p.value)} r={hover===i?4.5:3} fill={p.projected?projectedColor:(p.color||lineColor)}/>
       ))}
-      <text x={pad.l} y={h-4} fontSize={10} fill="#888">{fmt(tMin)}</text>
-      {tMax!==tMin && <text x={w-pad.r} y={h-4} fontSize={10} textAnchor="end" fill="#888">{fmt(tMax)}</text>}
+      {interactive && points.map((p,i)=>(
+        <circle key={`hit${i}`} cx={sx(p.date)} cy={sy(p.value)} r={14} fill="transparent" style={{cursor:"pointer"}} onMouseEnter={()=>setHover(i)} onClick={()=>setHover(i)}/>
+      ))}
+      <text x={pad.l} y={height-4} fontSize={10} fill="#888">{fmt(tMin)}</text>
+      {tMax!==tMin && <text x={width-pad.r} y={height-4} fontSize={10} textAnchor="end" fill="#888">{fmt(tMax)}</text>}
+      {hp && (()=>{
+        const tw=104, th=34;
+        let tx=sx(hp.date)+10; if (tx+tw>width-pad.r) tx=sx(hp.date)-10-tw; if (tx<pad.l) tx=pad.l;
+        let ty=sy(hp.value)-th-8; if (ty<pad.t) ty=sy(hp.value)+8;
+        return (
+          <g pointerEvents="none">
+            <rect x={tx} y={ty} width={tw} height={th} rx={6} fill="rgba(18,33,27,0.96)"/>
+            <text x={tx+9} y={ty+15} fontSize={11} fontWeight={600} fill="#fff">{valueFormat(hp.value)}</text>
+            <text x={tx+9} y={ty+28} fontSize={9} fill="rgba(255,255,255,0.72)">{fmt(hp.date)}</text>
+          </g>
+        );
+      })()}
     </svg>
   );
 }
 
-function HcpTrendChart({trend, projectedStartIndex=null}) {
-  const w=680,h=180,pad={t:16,r:20,b:28,l:44};
-  const vals=trend.map(t=>t.hcp);
-  const min=Math.min(...vals)-1, max=Math.max(...vals)+1;
-  const dates=trend.map(t=>new Date(t.date).getTime());
-  const tMin=Math.min(...dates), tMax=Math.max(...dates);
-  const sx=t=>tMax===tMin ? pad.l : pad.l+((t-tMin)/(tMax-tMin))*(w-pad.l-pad.r);
-  const sy=v=>pad.t+((max-v)/(max-min))*(h-pad.t-pad.b);
-  const actualTrend = projectedStartIndex===null ? trend : trend.slice(0, projectedStartIndex);
-  const projectedTrend = projectedStartIndex===null ? [] : trend.slice(Math.max(0, projectedStartIndex-1));
-  const actualPts=actualTrend.map(t=>`${sx(new Date(t.date).getTime())},${sy(t.hcp)}`).join(" ");
-  const projectedPts=projectedTrend.map(t=>`${sx(new Date(t.date).getTime())},${sy(t.hcp)}`).join(" ");
-  const fmt=t=>new Date(t).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"2-digit"});
+function ScoreChart({data, projectedStartIndex=null, width=680, height=200, interactive=false}) {
+  const visible=data.filter(d=>d.diff!==null);
+  const points=visible.map((d,i)=>({
+    date:new Date(d.date).getTime(),
+    value:d.diff,
+    color:d.mode==="Stableford"?COLORS.stableford:COLORS.stroke,
+    projected:projectedStartIndex!==null && i>=projectedStartIndex,
+  }));
+  if (!points.length) return null;
+  return <LineChart points={points} lineColor={COLORS.hcp} width={width} height={height} interactive={interactive} valueFormat={v=>v.toFixed(1)}/>;
+}
+
+function HcpTrendChart({trend, projectedStartIndex=null, width=680, height=180, interactive=false}) {
+  const points=trend.map((t,i)=>({
+    date:new Date(t.date).getTime(),
+    value:t.hcp,
+    projected:projectedStartIndex!==null && i>=projectedStartIndex,
+  }));
+  if (!points.length) return null;
+  return <LineChart points={points} lineColor={COLORS.hcp} width={width} height={height} interactive={interactive} valueFormat={v=>v.toFixed(1)}/>;
+}
+
+// Fenster-Regler für die Charts: nach Runden (max 20) oder Zeitraum (max 365 Tage).
+function ChartWindowControl({win, setWin}) {
+  const btn=(active,label,onClick)=>(
+    <button key={label} onClick={onClick} style={{fontSize:11,padding:"3px 9px",borderRadius:"var(--border-radius-md)",background:active?COLORS.hcp:"transparent",color:active?"#fff":"var(--color-text-secondary)",border:`0.5px solid ${active?COLORS.hcp:"var(--color-border-tertiary)"}`,cursor:"pointer"}}>{label}</button>
+  );
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} style={{width:"100%",height:"auto",display:"block"}}>
-      {[Math.floor(min),Math.round((min+max)/2),Math.ceil(max)].map(v=>(
-        <g key={v}>
-          <line x1={pad.l} x2={w-pad.r} y1={sy(v)} y2={sy(v)} stroke="#D3D1C7" strokeWidth={0.5}/>
-          <text x={pad.l-6} y={sy(v)+4} fontSize={10} textAnchor="end" fill="#888">{v}</text>
-        </g>
-      ))}
-      {actualPts && <polyline points={actualPts} fill="none" stroke={COLORS.hcp} strokeWidth={2}/>}
-      {projectedPts && <polyline points={projectedPts} fill="none" stroke="#C56B1A" strokeWidth={2} strokeDasharray="6 4"/>}
-      {trend.map((t,i)=><circle key={i} cx={sx(new Date(t.date).getTime())} cy={sy(t.hcp)} r={3} fill={projectedStartIndex!==null && i>=projectedStartIndex ? "#C56B1A" : COLORS.hcp}/>)}
-      <text x={pad.l} y={h-4} fontSize={10} fill="#888">{fmt(tMin)}</text>
-      {tMax!==tMin && <text x={w-pad.r} y={h-4} fontSize={10} textAnchor="end" fill="#888">{fmt(tMax)}</text>}
-    </svg>
+    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+      <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>Fenster:</span>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+        {[5,10,20].map(n=>btn(win.mode==="rounds"&&win.size===n, `${n} Runden`, ()=>setWin({mode:"rounds",size:n})))}
+      </div>
+      <span style={{fontSize:11,color:"var(--color-border-secondary)"}}>·</span>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+        {[[90,"3 Mon."],[180,"6 Mon."],[365,"12 Mon."]].map(([d,l])=>btn(win.mode==="days"&&win.size===d, l, ()=>setWin({mode:"days",size:d})))}
+      </div>
+    </div>
   );
 }
 
@@ -1549,9 +1596,24 @@ function HcpSimulator({courses, rounds, startHcp, simulatedRounds, onAddRound, o
 }
 
 function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTimeline, diffByRoundId, projectedStartIndex=null, simulatedRoundIds=new Set(), title=null, recentTitle="Letzte Runden", actionArea=null, emptyText="Noch keine Runden erfasst", variant="full"}) {
+  const [win, setWin] = useState({mode:"rounds", size:20});
+  const [zoom, setZoom] = useState(null);
   const avgDiff = recentDiffs.length?(recentDiffs.reduce((s,d)=>s+d,0)/recentDiffs.length).toFixed(1):null;
-  const chartData = useMemo(()=>hcpTimeline.map((entry,i)=>({x:i+1,diff:entry.diff,mode:entry.round.mode,date:entry.round.date})),[hcpTimeline]);
-  const trendData = useMemo(()=>hcpTimeline.map((entry,i)=>({i:i+1,hcp:entry.hcpAfter,date:entry.round.date})),[hcpTimeline]);
+  // Anzeigefenster: max. 20 Runden bzw. max. 365 Tage.
+  const windowedTimeline = useMemo(()=>{
+    const capped = hcpTimeline.slice(-20);
+    if (win.mode==="rounds") return capped.slice(-Math.min(win.size,20));
+    if (!capped.length) return capped;
+    const latest = new Date(capped[capped.length-1].round.date).getTime();
+    const cutoff = latest - Math.min(win.size,365)*86400000;
+    return capped.filter(e=>new Date(e.round.date).getTime()>=cutoff);
+  },[hcpTimeline, win]);
+  const winProjectedStart = projectedStartIndex===null ? null : (()=>{
+    const p = projectedStartIndex - (hcpTimeline.length - windowedTimeline.length);
+    return p >= windowedTimeline.length ? null : Math.max(0, p);
+  })();
+  const chartData = useMemo(()=>windowedTimeline.map((entry,i)=>({x:i+1,diff:entry.diff,mode:entry.round.mode,date:entry.round.date})),[windowedTimeline]);
+  const trendData = useMemo(()=>windowedTimeline.map((entry,i)=>({i:i+1,hcp:entry.hcpAfter,date:entry.round.date})),[windowedTimeline]);
   const summaryCards = [["Runden gesamt",rounds.length],["HCP-wirksam",hcpRounds.length],["Ø Differenzial",avgDiff??"–"],["Bestes Diff",recentDiffs.length?Math.min(...recentDiffs).toFixed(1):"–"]];
   if (simulatedRoundIds.size) summaryCards.push(["Simuliert", simulatedRoundIds.size]);
 
@@ -1585,20 +1647,23 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTime
     </div>
   );
 
+  const chartCard = (label, key, node) => (
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+        <div style={{fontSize:14,fontWeight:500}}>{label}</div>
+        <button onClick={()=>setZoom(key)} title="Vergrößern" style={{fontSize:11,padding:"2px 8px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-tertiary)",background:"transparent",cursor:"pointer",color:"var(--color-text-secondary)"}}>⤢ Zoom</button>
+      </div>
+      <div onClick={()=>setZoom(key)} style={{cursor:"zoom-in"}}>{node}</div>
+    </div>
+  );
+
   const graphs = (chartData.length>0 || trendData.length>=2) ? (
-    <div style={{display:"grid",gridTemplateColumns:trendData.length>=2&&chartData.length>0?"1fr 1fr":"1fr",gap:16,marginBottom:24}}>
-      {chartData.length>0 && (
-        <div>
-          <div style={{fontSize:14,fontWeight:500,marginBottom:12}}>Score Differenzials</div>
-          <ScoreChart data={chartData} projectedStartIndex={projectedStartIndex}/>
-        </div>
-      )}
-      {trendData.length>=2 && (
-        <div>
-          <div style={{fontSize:14,fontWeight:500,marginBottom:10}}>HCP-Entwicklung</div>
-          <HcpTrendChart trend={trendData} projectedStartIndex={projectedStartIndex}/>
-        </div>
-      )}
+    <div style={{marginBottom:24}}>
+      <ChartWindowControl win={win} setWin={setWin}/>
+      <div style={{display:"grid",gridTemplateColumns:trendData.length>=2&&chartData.length>0?"1fr 1fr":"1fr",gap:16}}>
+        {chartData.length>0 && chartCard("Score Differenzials","score",<ScoreChart data={chartData} projectedStartIndex={winProjectedStart}/>)}
+        {trendData.length>=2 && chartCard("HCP-Entwicklung","trend",<HcpTrendChart trend={trendData} projectedStartIndex={winProjectedStart}/>)}
+      </div>
     </div>
   ) : null;
 
@@ -1662,6 +1727,16 @@ function Dashboard({rounds, hcpRounds, recentDiffs, estimatedHcp, onNew, hcpTime
             </div>
           )}
         </>
+      )}
+
+      {zoom && (
+        <Modal title={zoom==="score"?"Score Differenzials":"HCP-Entwicklung"} onClose={()=>setZoom(null)} maxWidth={960}>
+          <ChartWindowControl win={win} setWin={setWin}/>
+          {zoom==="score"
+            ? <ScoreChart data={chartData} projectedStartIndex={winProjectedStart} width={900} height={440} interactive/>
+            : <HcpTrendChart trend={trendData} projectedStartIndex={winProjectedStart} width={900} height={440} interactive/>}
+          <div style={{fontSize:12,color:"var(--color-text-secondary)",marginTop:10}}>Punkte antippen oder überfahren für Datum und Wert.</div>
+        </Modal>
       )}
     </div>
   );
