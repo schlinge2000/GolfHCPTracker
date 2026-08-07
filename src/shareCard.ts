@@ -274,16 +274,22 @@ export function parseShareLink(input: string): ShareCard | null {
 }
 
 /** Kurzbeschreibung für den Übernehmen-Dialog. */
-export function describeShareCard(card: ShareCard) {
+export function describeShareCard(card: ShareCard, lang: string = "de") {
+  const en = lang === "en";
   if (card.kind === "player") {
-    return `${card.name} · HCP-Index ${card.hcpIndex.toFixed(1).replace(".", ",")}`;
+    const index = en ? card.hcpIndex.toFixed(1) : card.hcpIndex.toFixed(1).replace(".", ",");
+    return `${card.name} · ${en ? "index" : "HCP-Index"} ${index}`;
   }
   if (card.kind === "game") {
-    const formats = card.formats.length === 1 ? "1 Format" : `${card.formats.length} Formate`;
-    return `${card.course.name} · ${card.holeCount} Loch · ${card.players.length} Spieler · ${formats}`;
+    const formats = card.formats.length === 1
+      ? (en ? "1 format" : "1 Format")
+      : `${card.formats.length} ${en ? "formats" : "Formate"}`;
+    const holes = en ? "holes" : "Loch";
+    const players = en ? "players" : "Spieler";
+    return `${card.course.name} · ${card.holeCount} ${holes} · ${card.players.length} ${players} · ${formats}`;
   }
   const parts = [`CR ${card.courseRating}`, `SR ${card.slopeRating}`, `Par ${card.par}`];
   if (card.tee) parts.push(card.tee);
-  if (card.holeData?.length) parts.push("mit Scorekarte");
+  if (card.holeData?.length) parts.push(en ? "with scorecard" : "mit Scorekarte");
   return `${card.name} · ${parts.join(" · ")}`;
 }

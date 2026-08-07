@@ -177,7 +177,7 @@ describe("scoreMatchplay", () => {
   it("meldet A/S vor dem ersten Loch", () => {
     const result = scoreMatchplay("a", "b", [], allocations, HOLES_18);
     expect(result.status).toBe(0);
-    expect(result.statusLabel).toBe("A/S");
+    expect(result.statusLabel).toEqual({ de: "A/S", en: "A/S" });
     expect(result.complete).toBe(false);
     expect(result.resultLabel).toBeNull();
   });
@@ -186,7 +186,7 @@ describe("scoreMatchplay", () => {
     const scores = scoresFrom([{ a: 4, b: 5 }]);
     const result = scoreMatchplay("a", "b", scores, allocations, HOLES_18);
     expect(result.status).toBe(1);
-    expect(result.statusLabel).toBe("1 auf");
+    expect(result.statusLabel).toEqual({ de: "1 auf", en: "1 up" });
     expect(result.holes[0].winner).toBe("a");
   });
 
@@ -211,7 +211,7 @@ describe("scoreMatchplay", () => {
     expect(result.decided).toBe(true);
     expect(result.decidedAtHole).toBe(15);
     expect(result.winner).toBe("a");
-    expect(result.resultLabel).toBe("3 & 2");
+    expect(result.resultLabel).toEqual({ de: "3 & 2", en: "3 & 2" });
   });
 
   it("wertet ein auf dem 18. Loch entschiedenes Match als 1 auf", () => {
@@ -220,14 +220,14 @@ describe("scoreMatchplay", () => {
     scores.push({ a: 4, b: 5 });
     const result = scoreMatchplay("a", "b", scores, allocations, HOLES_18);
     expect(result.complete).toBe(true);
-    expect(result.resultLabel).toBe("1 auf");
+    expect(result.resultLabel).toEqual({ de: "1 auf", en: "1 up" });
   });
 
   it("meldet ein komplett geteiltes Match als A/S", () => {
     const result = scoreMatchplay("a", "b", flatScores(18, { a: 4, b: 4 }), allocations, HOLES_18);
     expect(result.complete).toBe(true);
     expect(result.winner).toBeNull();
-    expect(result.resultLabel).toBe("Geteilt (A/S)");
+    expect(result.resultLabel).toEqual({ de: "Geteilt (A/S)", en: "Halved (A/S)" });
   });
 
   it("lässt Bagger-Löcher das Ergebnis nicht mehr verändern", () => {
@@ -237,7 +237,7 @@ describe("scoreMatchplay", () => {
     const result = scoreMatchplay("a", "b", scores, allocations, HOLES_18);
     expect(result.decidedAtHole).toBe(9);
     expect(result.status).toBe(10);
-    expect(result.resultLabel).toBe("10 & 8");
+    expect(result.resultLabel).toEqual({ de: "10 & 8", en: "10 & 8" });
     expect(result.holes[10].afterDecision).toBe(true);
   });
 
@@ -378,13 +378,14 @@ describe("scoreNassau", () => {
 
   it("legt Front 9, Back 9 und Gesamt an", () => {
     const result = scoreNassau("a", "b", [], allocations, HOLES_18);
-    expect(result.bets.map(bet => bet.label)).toEqual(["Front 9", "Back 9", "Gesamt"]);
+    expect(result.bets.map(bet => bet.label.de)).toEqual(["Front 9", "Back 9", "Gesamt"]);
+    expect(result.bets.map(bet => bet.label.en)).toEqual(["Front 9", "Back 9", "Total"]);
   });
 
   it("führt bei 9 Löchern nur eine Wette", () => {
     const result = scoreNassau("a", "b", [], allocations, HOLES_9);
     expect(result.bets).toHaveLength(1);
-    expect(result.bets[0].label).toBe("Gesamt");
+    expect(result.bets[0].label).toEqual({ de: "Gesamt", en: "Total" });
   });
 
   it("zählt gewonnene Wetten je Seite", () => {
@@ -394,7 +395,7 @@ describe("scoreNassau", () => {
     const result = scoreNassau("a", "b", scores, allocations, HOLES_18);
     // Front an A, Back an B, Gesamt geteilt.
     expect(result.totals).toEqual({ a: 1, b: 1 });
-    expect(result.bets[2].result.resultLabel).toBe("Geteilt (A/S)");
+    expect(result.bets[2].result.resultLabel).toEqual({ de: "Geteilt (A/S)", en: "Halved (A/S)" });
   });
 
   it("eröffnet einen Press über die Restlöcher des Segments", () => {
@@ -403,7 +404,7 @@ describe("scoreNassau", () => {
     for (let i = 3; i < 9; i += 1) scores.push({ a: 4, b: 5 });   // A gewinnt den Rest
     const result = scoreNassau("a", "b", scores, allocations, HOLES_18, [{ from: 3, segment: "front" }]);
     const press = result.bets.find(bet => bet.press);
-    expect(press?.label).toBe("Front 9 Press ab Loch 4");
+    expect(press?.label).toEqual({ de: "Front 9 Press ab Loch 4", en: "Front 9 press from hole 4" });
     expect(press?.from).toBe(3);
     expect(press?.to).toBe(9);
     expect(press?.result.winner).toBe("a");
