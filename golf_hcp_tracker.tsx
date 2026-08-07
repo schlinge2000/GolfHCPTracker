@@ -4021,7 +4021,7 @@ function HeroArt({ratio="4 / 3", fill=false}) {
 }
 
 
-function LandingPage({profile, onSave, onOpenLegal}) {
+function LandingPage({profile, onSave, onOpenLegal, onBackToApp=null}) {
   const t = useT();
   // Der Desktop-Screenshot ist auf Telefonbreite nicht mehr lesbar, dort zeigen
   // die Rubriken die Mobilansicht.
@@ -4285,6 +4285,14 @@ function LandingPage({profile, onSave, onOpenLegal}) {
           <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>{t("Spiel unter Druck. Mit der richtigen Vorgabe.","Golf under pressure. With the right strokes.")}</div>
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginLeft:"auto",alignItems:"center"}}>
+          {/* Steht nur, wenn die Seite aus der App heraus geoeffnet wurde. */}
+          {onBackToApp && (
+            <button type="button" onClick={onBackToApp}
+              style={{padding:"8px 14px",borderRadius:999,border:"none",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:13,fontWeight:700,
+                background:"linear-gradient(135deg, #1D9E75 0%, #14684f 100%)",color:"#fff",boxShadow:"0 8px 18px rgba(6,52,38,0.24)"}}>
+              {t("Zurück zur App","Back to the app")}
+            </button>
+          )}
           <nav aria-label={t("Bereiche","Sections")} style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
             {LANDING_PANELS.map(item=>(
               <button
@@ -4475,7 +4483,7 @@ function BrandMark({size=34}) {
   );
 }
 
-function SideNav({view, onSelect, isDesktop, collapsed, onToggleCollapsed, open, onClose, profileName, displayHcp, simulated=false}) {
+function SideNav({view, onSelect, isDesktop, collapsed, onToggleCollapsed, open, onClose, profileName, displayHcp, simulated=false, onOpenLanding}) {
   const t = useT();
   const [hovered, setHovered] = useState(null);
   const showLabels = !isDesktop || !collapsed;
@@ -4498,18 +4506,29 @@ function SideNav({view, onSelect, isDesktop, collapsed, onToggleCollapsed, open,
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,justifyContent:showLabels?"space-between":"center"}}>
         {showLabels ? (
           <>
-            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+            {/* Die Marke fuehrt zur Startseite – die Web-Konvention, und der einzige
+                Weg dorthin, ohne sich abzumelden. */}
+            <button type="button" onClick={onOpenLanding}
+              title={t("Startseite ansehen","View the start page")}
+              style={{display:"flex",alignItems:"center",gap:10,minWidth:0,padding:0,background:"transparent",border:"none",cursor:"pointer",color:"inherit",fontFamily:"var(--font-sans)",textAlign:"left"}}>
               <BrandMark/>
               <div style={{minWidth:0}}>
-                <div style={{fontSize:14,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>The Wolf Golf Club</div>
+                <div style={{fontSize:14,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"#fff"}}>The Wolf Golf Club</div>
                 <div style={{fontSize:11,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{profileName||"DGV · WHS"}</div>
               </div>
-            </div>
+            </button>
             <button onClick={isDesktop?onToggleCollapsed:onClose} title={isDesktop?t("Navigation einklappen","Collapse navigation"):t("Navigation schliessen","Close navigation")} aria-label={isDesktop?t("Navigation einklappen","Collapse navigation"):t("Navigation schliessen","Close navigation")} style={iconButton}>
               <NavIcon paths={isDesktop?["M14 7l-5 5 5 5","M19 7l-5 5 5 5"]:["M7 7l10 10","M17 7L7 17"]} size={17}/>
             </button>
           </>
-        ) : <BrandMark/>}
+        ) : (
+          <button type="button" onClick={onOpenLanding}
+            title={t("Startseite ansehen","View the start page")}
+            aria-label={t("Startseite ansehen","View the start page")}
+            style={{padding:0,background:"transparent",border:"none",cursor:"pointer",display:"grid",placeItems:"center"}}>
+            <BrandMark/>
+          </button>
+        )}
       </div>
 
       {isDesktop && collapsed && (
@@ -4575,7 +4594,7 @@ function SideNav({view, onSelect, isDesktop, collapsed, onToggleCollapsed, open,
   );
 }
 
-function MobileTopBar({title, displayHcp, onOpenNav, maxWidth, simulated=false}) {
+function MobileTopBar({title, displayHcp, onOpenNav, maxWidth, simulated=false, onOpenLanding}) {
   const t = useT();
   return (
     <header style={{
@@ -4590,7 +4609,12 @@ function MobileTopBar({title, displayHcp, onOpenNav, maxWidth, simulated=false})
           <NavIcon paths={["M4 7h16","M4 12h16","M4 17h16"]}/>
         </button>
         <div style={{minWidth:0,flex:1}}>
-          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:"var(--color-text-secondary)"}}>The Wolf Golf Club</div>
+          {/* Der Markenname fuehrt zur Startseite, der Seitentitel darunter bleibt Text. */}
+          <button type="button" onClick={onOpenLanding}
+            title={t("Startseite ansehen","View the start page")}
+            style={{display:"block",padding:0,background:"transparent",border:"none",cursor:"pointer",fontSize:10,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:"var(--color-text-secondary)",fontFamily:"var(--font-sans)",textAlign:"left"}}>
+            The Wolf Golf Club
+          </button>
           <div style={{fontSize:15,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
         </div>
         <div style={{textAlign:"right",flexShrink:0}}>
@@ -4631,6 +4655,8 @@ function AppBody() {
   const [form, setForm] = useState(null);
   const [courseForm, setCourseForm] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [logoutOpen, setLogoutOpen] = useState(false);
+  const [wipeArmed, setWipeArmed] = useState(false);
   // Geteilte Spieler- und Platzkarten kommen als Link mit Nutzlast im Fragment an.
   const [pendingCard, setPendingCard] = useState<ShareCard | null>(null);
 
@@ -4964,6 +4990,26 @@ function AppBody() {
     });
   },[db.profile.name, db.players, realDisplayHcp]);
 
+  // Abmelden ohne Konto: die App erkennt an einem leeren Profilnamen, dass sie
+  // wieder die Startseite zeigen soll. Die Runden bleiben dabei liegen – wer sich
+  // ganz vom Geraet trennen will, loescht sie im zweiten Schritt.
+  const openLanding = () => { setNavOpen(false); setView("landing"); };
+  const leaveProfile = () => {
+    updateDB(db=>{ db.profile = {...db.profile, name:""}; return db; });
+    setLogoutOpen(false);
+    setNavOpen(false);
+    setView("dashboard");
+  };
+  const wipeDevice = () => {
+    // Erst den Schluessel entfernen, dann den leeren Stand setzen: der
+    // saveDB-Effekt schreibt danach den leeren Stand, nicht den alten.
+    try { localStorage.removeItem("golf_hcp_db"); } catch(e) {}
+    setDB(normalizeDB(null));
+    setLogoutOpen(false);
+    setNavOpen(false);
+    setView("dashboard");
+  };
+
   const newRound = () => setForm({ date:new Date().toISOString().slice(0,10), mode:"Stableford", format:"Einzel", holes:18, submitted:false, markerSigned:false, nineHoleAllowed:false, simulated:false, playingHcp:displayHcp });
 
   const cardPrompt = pendingCard && (
@@ -4982,6 +5028,21 @@ function AppBody() {
       </div>
     </Modal>
   );
+
+  // Startseite aus der App heraus ansehen: eigener Ausstieg, damit sie ohne
+  // Seitennavigation in ihrer eigenen Breite steht. Das Profil bleibt bestehen –
+  // wer es im Formular dort speichert, landet gleich wieder in der App.
+  if (view==="landing" && db.profile.name) {
+    return <>
+      <LandingPage
+        profile={db.profile}
+        onSave={p=>{ saveProfile(p); setView("dashboard"); }}
+        onOpenLegal={setView}
+        onBackToApp={()=>setView("dashboard")}
+      />
+      {cardPrompt}
+    </>;
+  }
 
   // Impressum und Datenschutz muessen auch ohne Profil erreichbar sein, also vor der Landing Page.
   if (!db.profile.name) {
@@ -5010,9 +5071,10 @@ function AppBody() {
         profileName={db.profile.name}
         displayHcp={displayHcp}
         simulated={simulatedRoundIds.size>0}
+        onOpenLanding={openLanding}
       />
       <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
-        {!isDesktop && <MobileTopBar title={activeNavItem ? t(activeNavItem.label) : (t(LEGAL_VIEW_LABELS[view]) ?? "Dashboard")} displayHcp={displayHcp} simulated={simulatedRoundIds.size>0} onOpenNav={()=>setNavOpen(true)} maxWidth={contentMaxWidth}/>}
+        {!isDesktop && <MobileTopBar title={activeNavItem ? t(activeNavItem.label) : (t(LEGAL_VIEW_LABELS[view]) ?? "Dashboard")} displayHcp={displayHcp} simulated={simulatedRoundIds.size>0} onOpenNav={()=>setNavOpen(true)} onOpenLanding={openLanding} maxWidth={contentMaxWidth}/>}
         <div style={{maxWidth:contentMaxWidth,margin:"0 auto",padding:contentShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
           <div style={{...cardStyle,display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:18,gap:16,flexWrap:"wrap",padding:isDesktop?"22px 24px":"18px 20px",background:"linear-gradient(140deg, rgba(20,46,37,0.96) 0%, rgba(18,57,44,0.94) 45%, rgba(29,158,117,0.76) 100%)",color:"#fff",position:"relative",overflow:"hidden"}}>
             <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at top right, rgba(255,255,255,0.16), transparent 28%), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)",backgroundSize:"auto, 24px 24px",opacity:0.4,pointerEvents:"none"}}/>
@@ -5106,6 +5168,19 @@ function AppBody() {
                         "Show the code to your playing partners: whoever scans it with their phone camera gets your name and current handicap index into their game – no typing. The code holds only those two details and never goes through a server.")}
               />
             </div>
+            <div style={{...cardStyle,padding:"20px 24px",marginTop:14}}>
+              <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>{t("Abmelden","Sign out")}</div>
+              <p style={{fontSize:13,lineHeight:1.6,color:"var(--color-text-secondary)",margin:"0 0 12px"}}>
+                {t("Die App hat kein Konto – dein Profil liegt allein in diesem Browser. Abmelden bringt dich zurück zur Startseite, ohne dass du den Browser-Speicher von Hand leeren musst.",
+                   "The app has no account – your profile lives only in this browser. Signing out takes you back to the start page without clearing browser storage by hand.")}
+              </p>
+              <button
+                type="button"
+                onClick={()=>{ setWipeArmed(false); setLogoutOpen(true); }}
+                style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",border:"1px solid var(--color-border-secondary)",background:"rgba(255,255,255,0.92)",color:"var(--color-text-primary)",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14,fontWeight:600}}>
+                {t("Abmelden","Sign out")}
+              </button>
+            </div>
           </>}
           {view==="data" && <DataPortability
             db={db}
@@ -5132,6 +5207,55 @@ function AppBody() {
 
           {form && <Modal title={form.id?(form.simulated?t("Simulation bearbeiten","Edit simulation"):t("Runde bearbeiten","Edit round")):t("Neue Runde","New round")} onClose={()=>setForm(null)}><RoundForm initial={form} courses={db.courses} currentHcp={displayHcp} recentDiffs={recentDiffs} nextSimulationDate={nextSimulationDate} onSave={saveRound} onCancel={()=>setForm(null)}/></Modal>}
           {courseForm && <Modal title={courseForm.id?t("Platz bearbeiten","Edit course"):t("Neuer Platz","New course")} onClose={()=>setCourseForm(null)}><CourseForm initial={courseForm} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} onSave={saveCourse} onCancel={()=>setCourseForm(null)}/></Modal>}
+          {logoutOpen && <Modal title={t("Abmelden","Sign out")} onClose={()=>setLogoutOpen(false)}>
+            <p style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)",margin:"0 0 16px"}}>
+              {t("Ohne Konto gibt es zwei Wege: Du verlässt nur das Profil und lässt die Daten hier liegen – oder du räumst das Gerät ganz auf.",
+                 "Without an account there are two ways out: leave the profile and keep the data here – or clear this device completely.")}
+            </p>
+
+            <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:12}}>
+              <div style={{fontSize:14,fontWeight:650,marginBottom:4}}>{t("Nur abmelden","Just sign out")}</div>
+              <div style={{fontSize:13,lineHeight:1.6,color:"var(--color-text-secondary)",marginBottom:12}}>
+                {t("Runden, Plätze und Spiele bleiben auf diesem Gerät. Sobald hier wieder ein Name eingetragen wird, sind sie da – auch bei einem anderen Namen.",
+                   "Rounds, courses and games stay on this device. As soon as a name is entered here again they are back – even under a different name.")}
+              </div>
+              <button type="button" onClick={leaveProfile}
+                style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14,fontWeight:600}}>
+                {t("Zur Startseite","Back to the start page")}
+              </button>
+            </div>
+
+            <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:16,border:"1px solid rgba(226,75,74,0.28)"}}>
+              <div style={{fontSize:14,fontWeight:650,marginBottom:4}}>{t("Abmelden und Daten löschen","Sign out and delete the data")}</div>
+              <div style={{fontSize:13,lineHeight:1.6,color:"var(--color-text-secondary)",marginBottom:12}}>
+                {t("Löscht Profil, Runden, Plätze und Spiele in diesem Browser. Das lässt sich nicht rückgängig machen – ein Backup gibt es vorher unter „Daten“ als JSON-Export.",
+                   "Deletes profile, rounds, courses and games in this browser. This cannot be undone – you can take a JSON backup first under „Daten“.")}
+              </div>
+              {wipeArmed ? (
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <button type="button" onClick={wipeDevice}
+                    style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"#E24B4A",color:"#fff",border:"none",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14,fontWeight:600}}>
+                    {t("Wirklich alles löschen","Yes, delete everything")}
+                  </button>
+                  <button type="button" onClick={()=>setWipeArmed(false)}
+                    style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:`0.5px solid ${COLORS.border}`,color:"var(--color-text-primary)",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14}}>
+                    {t("Zurück","Back")}
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={()=>setWipeArmed(true)}
+                  style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:"1px solid #E24B4A",color:"#E24B4A",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14,fontWeight:600}}>
+                  {t("Daten löschen","Delete the data")}
+                </button>
+              )}
+            </div>
+
+            <button type="button" onClick={()=>setLogoutOpen(false)}
+              style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:`0.5px solid ${COLORS.border}`,color:"var(--color-text-primary)",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14}}>
+              {t("Abbrechen","Cancel")}
+            </button>
+          </Modal>}
+
           {deleteConfirm && <Modal title={t("Runde löschen?","Delete round?")} onClose={()=>setDeleteConfirm(null)}>
             <p style={{color:COLORS.textSec,fontSize:14}}>{t("Diese Runde wird unwiderruflich gelöscht.","This round will be deleted for good.")}</p>
             <div style={{display:"flex",gap:8,marginTop:16}}>
