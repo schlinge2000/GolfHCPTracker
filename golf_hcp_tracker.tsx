@@ -4063,11 +4063,15 @@ function HeroArt({ratio="4 / 3", fill=false}) {
   if (!imageBroken) {
     return (
       <div style={frame}>
+        {/* Beim 4:5-Beschnitt am Telefon schneidet die Standardmitte (50%) den
+            Schuh des vordersten Golfers ab (Unterkante bei 88% der Bildhoehe,
+            Fahnenspitze bei 15%). 56% schiebt das Fenster so weit nach unten,
+            dass Schuh und Fahne gleich viel Luft behalten. */}
         <img
           src={HERO_IMAGE_SRC}
           alt={t("Ein langer Fairway zum Grün: der Wolf läuft voran, drei Mitspieler jagen ihn.","A long fairway up to the green: the wolf runs ahead and three players chase him.")}
           onError={()=>setImageBroken(true)}
-          style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
+          style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"center 56%",display:"block"}}
         />
       </div>
     );
