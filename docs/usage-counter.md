@@ -20,7 +20,8 @@ verhält sich die App wie vorher: sie sendet nichts.
 5. Blobs älter als 400 Tage werden automatisch gelöscht: immer beim `GET`
    (die Liste liegt dort schon vor) und mit 2 % Wahrscheinlichkeit beim `POST`.
 6. `GET /api/usage` liefert die Aggregate. Die App zeigt sie unter
-   **HCP-Info → Datenschutz**; dort sitzt auch der Opt-out-Schalter.
+   **HCP-Info → Datenschutz und Impressum**; dort sitzt auch der Opt-out-Schalter.
+   Abschnitt 4 der Datenschutzerklärung beschreibt den Zähler vollständig.
 
 Beim Opt-out wird die ID auf dem Gerät gelöscht. Nach dem Wiedereinschalten
 entsteht eine neue ID, die sich nicht mit der alten Zählung verknüpfen lässt.
@@ -59,6 +60,15 @@ Wenn im Netlify-UI ein **abweichendes Functions-Verzeichnis** konfiguriert ist,
 muss `netlify/functions/usage.mts` dorthin – `netlify/functions` ist der
 Standard und braucht keine `netlify.toml`.
 
+> **Nichts anderes in `netlify/functions/` ablegen.** Netlify baut *jede* Datei
+> in diesem Verzeichnis als eigene Function. Eine Testdatei dort lässt den
+> ganzen Deploy scheitern (`Top-level await is currently not supported with the
+> "cjs" output format`) – deshalb liegt der Function-Test in `src/`. Prüfen
+> lässt sich das ohne Deploy:
+> `npx @netlify/zip-it-and-ship-it netlify/functions /tmp/out` bzw. über die
+> `zipFunctions()`-API; es darf genau eine Function `usage` mit der Route
+> `/api/usage` entstehen.
+
 Deploy-Previews und Branch-Deploys schreiben in einen eigenen Store
 (`usage-deploy-preview` statt `usage`, abgeleitet aus Netlifys `CONTEXT`),
 damit Testaufrufe den Produktionszähler nicht hochtreiben.
@@ -77,7 +87,7 @@ damit Testaufrufe den Produktionszähler nicht hochtreiben.
 | `src/usagePing.ts` | Client: ID, Tagesdrossel, Offline-Nachtrag, Opt-out |
 | `src/usageAggregate.ts` | Geteilt: Schlüsselformat, ID-Muster, Aggregation, Retention |
 | `netlify/functions/usage.mts` | Function: Routing, Validierung, Blob-Zugriff |
-| `netlify/functions/usage.test.mts` | Function gegen einen In-Memory-Blob-Store |
+| `src/usageFunction.test.ts` | Function gegen einen In-Memory-Blob-Store |
 | `public/sw.js` | `/api/` wird nicht gecacht, sonst zeigt die App veraltete Zahlen |
 
 ID-Muster und Aufbewahrungsdauer stehen absichtlich nur an einer Stelle
@@ -100,7 +110,7 @@ im Datenschutztext genannte Frist auseinander.
   die Zahl aufblähen. Für eine private App ist das vertretbar; bei Bedarf
   helfen `USAGE_ALLOWED_ORIGIN` plus eine Rate-Limit-Regel vor `/api/usage`.
 - Rechtlicher Hinweis: Das Ablegen der ID auf dem Gerät passiert hier ohne
-  vorherige Einwilligung, mit Opt-out (§ 25 TTDSG kennt für nicht zwingend
+  vorherige Einwilligung, mit Opt-out (§ 25 TDDDG – vormals TTDSG – kennt für nicht zwingend
   erforderliche Speicherung streng genommen nur die Einwilligung). Für eine
   private, nicht vermarktete App ist das die üblich gewählte Abwägung; soll es
   strikt sein, muss der Zähler auf Opt-in umgestellt werden – dazu in

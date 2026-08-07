@@ -1,9 +1,13 @@
 /**
  * Testet die Zaehl-Function gegen einen In-Memory-Ersatz von Netlify Blobs.
+ *
+ * Liegt bewusst hier und nicht in netlify/functions/: Netlify bundelt jede
+ * Datei in diesem Verzeichnis als eigene Function und scheitert dann an der
+ * Testdatei.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { usageKey, USAGE_RETENTION_DAYS, utcDay } from "../../src/usageAggregate";
+import { usageKey, USAGE_RETENTION_DAYS, utcDay } from "./usageAggregate";
 
 const { blobs } = vi.hoisted(() => ({ blobs: new Map<string, string>() }));
 
@@ -22,7 +26,7 @@ vi.mock("@netlify/blobs", () => ({
   }),
 }));
 
-const handler = (await import("./usage.mts")).default;
+const handler = (await import("../netlify/functions/usage.mts")).default;
 
 /** Dieselbe Referenz, die die Function liest - ohne @types/node vorauszusetzen. */
 const testEnv = (globalThis as any).process.env as Record<string, string | undefined>;
