@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline } from "./src/hcpMath";
+import { fetchUsageStats, isUsagePingEnabled, setUsagePingEnabled, USAGE_ID_RETENTION_DAYS, type UsageStats } from "./src/usagePing";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -1874,6 +1875,53 @@ function DataPortability({db, onJsonImport, onGolfDePdfImport}) {
   );
 }
 
+function UsageCounterSetting() {
+  const [enabled, setEnabled] = useState(()=>isUsagePingEnabled());
+  const [stats, setStats] = useState<UsageStats|null>(null);
+  const [status, setStatus] = useState("loading");
+
+  useEffect(()=>{
+    if (!enabled) { setStats(null); setStatus("off"); return; }
+    let cancelled = false;
+    setStatus("loading");
+    fetchUsageStats().then(result=>{
+      if (cancelled) return;
+      setStats(result);
+      setStatus(result ? "ready" : "unavailable");
+    });
+    return ()=>{ cancelled = true; };
+  },[enabled]);
+
+  const num = value => value.toLocaleString("de-DE");
+
+  return (
+    <div style={{...subtleCardStyle,padding:"12px 14px",marginTop:10,marginBottom:6}}>
+      <label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,cursor:"pointer",color:"var(--color-text-primary)"}}>
+        <input type="checkbox" checked={enabled} onChange={e=>setEnabled(setUsagePingEnabled(e.target.checked))} style={{marginTop:2}}/>
+        <span>Anonymen Nutzungszähler aktiv lassen</span>
+      </label>
+      <div style={{fontSize:12,color:"var(--color-text-secondary)",marginTop:8,lineHeight:1.6}}>
+        {status==="off" && "Zähler ist aus. Es wird nichts gesendet, die Installations-ID auf diesem Gerät ist gelöscht."}
+        {status==="loading" && "Zahlen werden geladen …"}
+        {status==="unavailable" && "Zahlen sind gerade nicht abrufbar (offline oder Zähl-Endpoint nicht eingerichtet)."}
+        {status==="ready" && stats && (
+          <>
+            <div style={{fontSize:13,fontWeight:600,color:"var(--color-text-primary)"}}>
+              {num(stats.activeLast30Days)} {stats.activeLast30Days===1?"Gerät":"Geräte"} in den letzten 30 Tagen aktiv
+            </div>
+            <div style={{marginTop:2}}>
+              heute {num(stats.activeToday)} · letzte 7 Tage {num(stats.activeLast7Days)} · insgesamt gezählt {num(stats.total)}
+            </div>
+            <div style={{marginTop:2}}>
+              Gezählt werden Geräte bzw. Browser-Installationen, nicht Personen: dasselbe Handy und derselbe Laptop sind zwei.
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HcpInfo() {
   const card = (children) => (
     <div style={{...cardStyle,padding:"16px 20px",marginBottom:14}}>
@@ -1974,8 +2022,12 @@ function HcpInfo() {
 
       {card(<>
         {h("Datenschutz")}
-        {p("Die App speichert Runden, Plaetze und Profildaten lokal im Browser auf deinem Geraet. Es gibt keinen Login, keine Server-Synchronisation und kein eingebautes Tracking oder Analytics.")}
-        {p("Der aktuelle Stand ist als private, nicht-kommerzielle App gedacht und wird nicht ueber eine eigene oeffentlich auffindbare Domain vermarktet. Wenn sich Hosting, Tracking oder Datenfluesse spaeter aendern, muss der Datenschutzhinweis entsprechend angepasst werden.")}
+        {p("Die App speichert Runden, Plätze und Profildaten lokal im Browser auf deinem Gerät. Es gibt keinen Login und keine Server-Synchronisation: Deine Runden, dein Name und deine Handicap-Werte verlassen dieses Gerät nicht. Es sind kein Analytics-Dienst und kein Drittanbieter eingebunden, und es werden keine Cookies gesetzt.")}
+        {p("Einzige Ausnahme ist der anonyme Nutzungszähler unten. Damit sichtbar ist, wie viele Geräte die App überhaupt nutzen, sendet die App höchstens einmal pro Kalendertag eine einmalig erzeugte Zufalls-ID (eine UUID, z. B. „3f2a1c4e-…“) an den Zähl-Endpoint dieser App. Übertragen wird ausschließlich diese ID – keine Namen, keine Runden, keine Handicap-Daten, keine Angabe darüber, was du in der App gemacht hast.")}
+        {p(`Serverseitig wird daraus nur gespeichert, dass diese ID an diesem Kalendertag aktiv war. IP-Adresse, Browserkennung und genaue Uhrzeit werden nicht abgelegt. Die Zähldaten werden nach ${USAGE_ID_RETENTION_DAYS} Tagen automatisch gelöscht.`)}
+        {p("Du kannst den Zähler jederzeit abschalten. Beim Abschalten wird die Zufalls-ID auf diesem Gerät gelöscht; wenn du ihn später wieder einschaltest, entsteht eine neue ID, die sich nicht mit der alten Zählung verknüpfen lässt. Ohne erreichbaren Zähl-Endpoint (z. B. bei lokalem Betrieb) sendet die App nichts.")}
+        <UsageCounterSetting/>
+        {p("Der aktuelle Stand ist als private, nicht-kommerzielle App gedacht und wird nicht über eine eigene öffentlich auffindbare Domain vermarktet. Wenn sich Hosting, Zählung oder Datenflüsse später ändern, muss dieser Datenschutzhinweis entsprechend angepasst werden.")}
       </>)}
     </div>
   );
@@ -2010,7 +2062,7 @@ function AppFooter() {
         <div>
           <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Rechtliches</div>
           <div style={{fontSize:13,color:"var(--color-text-secondary)",lineHeight:1.6}}>
-            Diese App ist derzeit als private, nicht-kommerzielle Anwendung gedacht, ohne eigene oeffentlich vermarktete Domain. Daten bleiben lokal im Browser; es gibt keinen Login und kein eingebautes Tracking. Wenn die App spaeter oeffentlich betrieben wird, muessen Impressum und Datenschutzhinweise erneut geprueft und ergaenzt werden.
+            Diese App ist derzeit als private, nicht-kommerzielle Anwendung gedacht, ohne eigene öffentlich vermarktete Domain. Runden-, Platz- und Profildaten bleiben lokal im Browser; es gibt keinen Login und kein Analytics. Übertragen wird nur eine anonyme Zufalls-ID für den Nutzungszähler, der unter „HCP-Info → Datenschutz“ erklärt und abschaltbar ist. Wenn die App später öffentlich betrieben wird, müssen Impressum und Datenschutzhinweise erneut geprüft und ergänzt werden.
           </div>
         </div>
       </div>

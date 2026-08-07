@@ -1,4 +1,4 @@
-const CACHE_NAME = 'golf-hcp-tracker-v2';
+const CACHE_NAME = 'golf-hcp-tracker-v3';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -35,6 +35,9 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+
+  // Zaehler-Endpoint nie cachen, sonst liefert die App veraltete Zahlen.
+  if (url.pathname.startsWith('/api/')) return;
 
   if (event.request.mode === 'navigate') {
     event.respondWith((async () => {
