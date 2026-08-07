@@ -4,6 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#1D9E75" />
+    <meta
+      name="description"
+      content="Handicap-Index nach dem World Handicap System berechnen und verfolgen: Runden erfassen, golf.de-Historie per PDF importieren, Entwicklung sehen. Kostenlos, ohne Konto, alle Daten bleiben im Browser."
+    />
+    <link rel="canonical" href="https://wolfgolf.club/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Golf HCP Tracker" />
+    <meta property="og:locale" content="de_DE" />
+    <meta property="og:url" content="https://wolfgolf.club/" />
+    <meta property="og:title" content="Golf HCP Tracker – dein Handicap, nachvollziehbar" />
+    <meta
+      property="og:description"
+      content="Runden erfassen, Differenziale sehen, Entwicklung verfolgen – nach den WHS-Regeln des DGV. Kostenlos, ohne Konto, alle Daten bleiben auf deinem Gerät."
+    />
+    <meta property="og:image" content="https://wolfgolf.club/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Golf HCP Tracker: Dashboard mit Handicap-Index, Wertungsfenster und Verlauf" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Golf HCP Tracker – dein Handicap, nachvollziehbar" />
+    <meta
+      name="twitter:description"
+      content="Runden erfassen, Differenziale sehen, Entwicklung verfolgen – nach den WHS-Regeln des DGV. Kostenlos und ohne Konto."
+    />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Golf HCP" />
@@ -39,8 +64,33 @@
           radial-gradient(circle at top right, rgba(55, 138, 221, 0.12), transparent 28%),
           linear-gradient(180deg, #f7faf7 0%, var(--color-background-page) 52%, #e7ece7 100%);
       }
+
+      /* Aufklappbare Fragen auf der Startseite: eigenes Plus/Minus statt Browser-Dreieck. */
+      summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .faq-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .faq-summary::after {
+        content: "+";
+        flex-shrink: 0;
+        font-size: 22px;
+        line-height: 1;
+        font-weight: 700;
+        color: #1d9e75;
+      }
+
+      details[open] > .faq-summary::after {
+        content: "\2013";
+      }
     </style>
-    <title>Golf HCP Tracker</title>
+    <title>Golf HCP Tracker – Handicap nach WHS berechnen und verfolgen</title>
   </head>
   <body>
     <div id="root"></div>

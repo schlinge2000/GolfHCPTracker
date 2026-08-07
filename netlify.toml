@@ -1,0 +1,49 @@
+# Absichtlich ohne [build]-Block: Build-Befehl und Publish-Verzeichnis bleiben in der
+# Netlify-UI konfiguriert. Eine [build]-Sektion hier wuerde die UI-Einstellungen
+# ueberschreiben – wer sie in den Code holen will, traegt hier
+# command = "pnpm run build" und publish = "dist" nach.
+
+# Single-Page-App: unbekannte Pfade auf die index.html ausliefern, ohne Redirect.
+# Vorhandene Dateien (Assets, Bilder, robots.txt) gehen vor und werden nicht angefasst.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "SAMEORIGIN"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), camera=(), microphone=(), payment=()"
+
+# Erst aktivieren, wenn HTTPS unter der eigenen Domain sicher funktioniert:
+# HSTS zwingt Browser fuer ein Jahr auf HTTPS und laesst sich nicht schnell zuruecknehmen.
+# [[headers]]
+#   for = "/*"
+#   [headers.values]
+#     Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
+# Service Worker und Einstiegsseite duerfen nie aus einem alten Cache kommen,
+# sonst bleiben Nutzer auf einer veralteten Version haengen.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# Vite haengt Hashes an die Dateinamen, deshalb sind Assets dauerhaft cachebar.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
