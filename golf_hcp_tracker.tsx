@@ -3528,6 +3528,11 @@ function AppFooter({onOpenLegal}) {
 
 const LANDING_FEATURES = [
   {
+    icon: ["M12 21a9 9 0 100-18 9 9 0 000 18Z","M12 7.5V12l3 2"],
+    title: "Der neue Index steht sofort",
+    text: "Runde eintragen, Index steht – du musst nicht warten, bis der Club die Scorekarte verarbeitet hat und golf.de den neuen Wert anzeigt. Daneben siehst du gleich, wodurch er sich verändert hat. Der offiziell geführte Index folgt später nach.",
+  },
+  {
     icon: ["M6 3h12v18H6z","M9 7h6","M9 11h.01","M12 11h.01","M15 11h.01","M9 15h.01","M12 15h.01","M15 15h.01"],
     title: "Jede Formel zum Nachlesen",
     text: "Score Differenzial aus GBE, Course Rating und Slope, dann die besten Differenziale der letzten 20 Runden plus die Anpassung für kleine Rundenzahlen. Der Bereich HCP-Info erklärt jeden Schritt mit Formel und Beispiel – auch wenn du mit WHS noch nie zu tun hattest.",
@@ -3586,7 +3591,7 @@ const LANDING_DETAILS = [
 const LANDING_FAQ = [
   {
     q: "Ist das mein offizielles Handicap?",
-    a: "Nein. Die App rechnet nach den WHS-Regeln des DGV, verbindlich bleibt aber der Index, den dein Heimatclub führt. Der berechnete Wert entspricht dem, was golf.de als „Berechneter HCPI“ ausweist.",
+    a: "Nein. Die App rechnet nach den WHS-Regeln des DGV, verbindlich bleibt der Index, den dein Heimatclub führt. Der Vorteil ist der Zeitpunkt: Du siehst den neuen Wert direkt nach der Runde, während der offizielle erst nach der Verarbeitung im Club bei golf.de erscheint. Der berechnete Wert entspricht dem, was golf.de später als „Berechneter HCPI“ ausweist.",
   },
   {
     q: "Ich fange gerade mit Golf an – hilft mir das?",
@@ -3698,7 +3703,7 @@ function LandingPage({profile, onSave, onOpenLegal}) {
             <button type="button" onClick={()=>scrollTo(calcRef)} style={secondaryButtonStyle}>So wird gerechnet</button>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {["Jede Formel erklärt","Für Einsteiger gedacht","0 €, ohne Registrierung","Offline nutzbar"].map(text=>(
+            {["Neuer Index sofort nach der Runde","Jede Formel erklärt","Für Einsteiger gedacht","0 €, ohne Registrierung"].map(text=>(
               <span key={text} style={heroChipStyle}>{check}{text}</span>
             ))}
           </div>
@@ -3737,7 +3742,8 @@ function LandingPage({profile, onSave, onOpenLegal}) {
         <h2 style={sectionHeadingStyle}>Vom Ergebnis zur Erklärung.</h2>
         <p style={{...bodyTextStyle,maxWidth:680,marginBottom:16}}>
           Dein Club führt den Index, sagt dir aber nicht, warum er sich bewegt hat – oder eben nicht bewegt hat.
-          Genau das macht Wolf Golf sichtbar: nach jeder Runde, in ganzen Sätzen statt in Tabellen.
+          Und bis der neue Wert bei golf.de steht, dauert es. Genau diese Lücke füllt Wolf Golf: sofort nach der
+          Runde, in ganzen Sätzen statt in Tabellen.
         </p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:14}}>
           {LANDING_FEATURES.map(feature=>(
