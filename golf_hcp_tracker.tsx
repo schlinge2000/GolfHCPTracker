@@ -3491,7 +3491,7 @@ function AppFooter({onOpenLegal}) {
     <footer style={{...cardStyle,padding:"18px 20px",marginTop:24,background:"linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(241,245,242,0.95) 100%)"}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))",gap:18}}>
         <div>
-          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Wolf Golf</div>
+          <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Wolf Golf Club</div>
           <div style={{fontSize:13,color:"var(--color-text-secondary)",lineHeight:1.6}}>
             Lokaler Golf-Handicap-Tracker fuer Runden, Simulator und golf.de PDF-Import direkt im Browser.
           </div>
@@ -3519,53 +3519,41 @@ function AppFooter({onOpenLegal}) {
         </div>
       </div>
       <div style={{marginTop:16,paddingTop:14,borderTop:"1px solid var(--color-border-tertiary)",display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",fontSize:12,color:"var(--color-text-secondary)"}}>
-        <span>{year} Wolf Golf</span>
+        <span>{year} Wolf Golf Club</span>
         <span>Feedback und Fehlermeldungen laufen ueber GitHub Issues.</span>
       </div>
     </footer>
   );
 }
 
-const LANDING_FEATURES = [
+// Die Startseite erzählt zwei Kapitel, die sich gegenseitig tragen: den Index
+// verstehen und aktuell halten – und mit genau diesem Index gegen Freunde spielen.
+const LANDING_THEMES = [
   {
-    icon: ["M12 21a9 9 0 100-18 9 9 0 000 18Z","M12 7.5V12l3 2"],
-    title: "Der neue Index steht sofort",
-    text: "Runde eintragen, Index steht – du musst nicht warten, bis der Club die Scorekarte verarbeitet hat und golf.de den neuen Wert anzeigt. Daneben siehst du gleich, wodurch er sich verändert hat. Der offiziell geführte Index folgt später nach.",
+    id: "index",
+    tab: "Handicap verstehen",
+    eyebrow: "Kapitel 1 · Verstehen und aktuell halten",
+    title: "Nach der Runde weißt du sofort, wo du stehst.",
+    lead: "Dein Club führt den Index, sagt dir aber weder, warum er sich bewegt hat, noch wann. Wolf Golf schon – in dem Moment, in dem du die Runde einträgst.",
+    points: [
+      ["Neuer Index sofort", "Runde eintragen, Index steht. Kein Warten, bis der Club die Scorekarte verarbeitet hat und golf.de nachzieht."],
+      ["Jede Formel erklärt", "Score Differenzial, Wertungsfenster, Exceptional Score, Anfänger-Bremse – mit Formel und Beispiel, auch wenn du mit WHS noch nie zu tun hattest."],
+      ["Du siehst, was zählt", "Welche vier Runden gerade zählen, welche als nächste aus dem Fenster fällt, und warum eine gute Runde manchmal nichts ändert."],
+      ["Historie in einem Schritt", "Den detaillierten Scoring Record von golf.de als PDF importieren – chronologisch, ohne Abtippen, ohne Upload."],
+    ],
   },
   {
-    icon: ["M6 3h12v18H6z","M9 7h6","M9 11h.01","M12 11h.01","M15 11h.01","M9 15h.01","M12 15h.01","M15 15h.01"],
-    title: "Jede Formel zum Nachlesen",
-    text: "Score Differenzial aus GBE, Course Rating und Slope, dann die besten Differenziale der letzten 20 Runden plus die Anpassung für kleine Rundenzahlen. Der Bereich HCP-Info erklärt jeden Schritt mit Formel und Beispiel – auch wenn du mit WHS noch nie zu tun hattest.",
-  },
-  {
-    icon: ["M14 3v5h5","M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5Z","M12 12v5","M9.5 14.5L12 17l2.5-2.5"],
-    title: "golf.de-Historie per PDF",
-    text: "Detaillierten Scoring Record auswählen, fertig: Alle Runden landen chronologisch in der App. Kein Abtippen – und die Datei verlässt dein Gerät nicht.",
-  },
-  {
-    icon: ["M7.5 4h9v4.5a4.5 4.5 0 01-9 0V4Z","M7.5 5.5H4.5v1A3.5 3.5 0 008 10","M16.5 5.5h3v1A3.5 3.5 0 0116 10","M12 13v3.5","M8.5 20h7"],
-    title: "Spiele mit der Flight-Runde",
-    text: "Matchplay, Nassau mit Press, Skins mit Carry-over, Wolf und Bingo Bango Bongo – Loch für Loch mitgezählt, inklusive Abrechnung am Ende. Aus einer Spielrunde wird auf Wunsch direkt eine HCP-Runde.",
-  },
-  {
-    icon: ["M4 17l5-5 3 3 7-7","M15 8h5v5"],
-    title: "Simulator für die nächste Runde",
-    text: "Was macht eine 92 auf dem Heimatplatz mit deinem Index? Runde durchspielen und die Auswirkung sofort sehen, bevor du sie spielst.",
-  },
-  {
-    icon: ["M4 13h6V4H4v9Z","M14 20h6v-9h-6v9Z","M4 20h6v-4H4v4Z","M14 8h6V4h-6v4Z"],
-    title: "Du siehst, was zählt",
-    text: "Welche Runden aktuell in deinen Index eingehen, welche als nächste aus dem Fenster fällt und welches Ergebnis die schlechteste zählende Runde verdrängt. Damit wird verständlich, warum eine gute Runde manchmal nichts ändert.",
-  },
-  {
-    icon: ["M7 3h10a1 1 0 011 1v16a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1Z","M10.5 18h3"],
-    title: "Offline, auch auf der Runde",
-    text: "Als App auf den Startbildschirm legen. Nach dem ersten Laden funktioniert alles ohne Netz – im Clubhaus mit schlechtem Empfang genauso wie auf Loch 14.",
-  },
-  {
-    icon: ["M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3Z","M9.5 12.5h5v4h-5z","M10.6 12.5v-1.4a1.4 1.4 0 012.8 0v1.4"],
-    title: "Datenschutz ohne Kleingedrucktes",
-    text: "Kein Konto, keine E-Mail, keine Werbe-Cookies, keine Analyse-Werkzeuge. Deine Runden liegen im Speicher deines Browsers, nicht auf unserem Server. Übertragen wird nur eine zufällige Installations-ID für den anonymen Nutzungszähler – höchstens einmal pro Tag und mit einem Klick abschaltbar.",
+    id: "spiel",
+    tab: "Mit Freunden spielen",
+    eyebrow: "Kapitel 2 · Der Wettstreit im Flight",
+    title: "Aus einer Runde zu viert werden fünf Wettkämpfe.",
+    lead: "Dieselben Schläge, mehrere Wetten parallel: Loch für Loch mitgezählt, am Ende eine Abrechnung, über die niemand diskutiert.",
+    points: [
+      ["Fünf Spielformate", "Matchplay, Nassau mit Press, Skins mit Carry-over, Wolf und Bingo Bango Bongo – gleichzeitig auf denselben Scores."],
+      ["Netto mit der richtigen Vorgabe", "Weil dein Index stimmt, stimmt auch die Vorgabe: Der 28er hat gegen den 12er eine echte Chance statt einer rechnerischen."],
+      ["Abrechnung in Punkten", "Die App zählt Punkte und verrechnet sie auf möglichst wenige Ausgleiche. Was ein Punkt wert ist, macht der Flight unter sich aus."],
+      ["Aus dem Spiel wird eine Runde", "Am Ende übernimmst du dein Ergebnis mit einem Klick als HCP-wirksame Runde – zurück zu Kapitel 1."],
+    ],
   },
 ];
 
@@ -3598,24 +3586,16 @@ const LANDING_FAQ = [
     a: "Dafür ist die App vor allem gedacht. Am Anfang bewegt sich der Index in Sprüngen, die von außen willkürlich wirken: die Anfänger-Bremse ab 26,9, die Anpassung bei wenigen Runden, Ausnahmerunden. Die App zeigt nach jeder Runde, welche dieser Regeln gegriffen hat – und im Bereich HCP-Info steht jede Formel mit Beispiel.",
   },
   {
-    q: "Was kostet die App?",
-    a: "Nichts. Kein Abo, keine Werbung, keine In-App-Käufe, keine Datenvermarktung. Der Quellcode liegt offen auf GitHub.",
-  },
-  {
-    q: "Wo liegen meine Daten?",
-    a: "Im Speicher deines Browsers, auf deinem Gerät. Deine Runden werden nirgendwohin synchronisiert, niemand außer dir kann sie sehen. Das Einzige, was die App überträgt, ist eine zufällige Installations-ID für den anonymen Nutzungszähler – abschaltbar unter „HCP-Info“, Details in der Datenschutzerklärung.",
-  },
-  {
-    q: "Was passiert, wenn ich meine Browserdaten lösche?",
-    a: "Dann sind die Runden weg. Deshalb gibt es im Bereich „Daten“ einen JSON-Export als Backup – und den Weg zurück über den Import.",
+    q: "Spielen wir damit um Geld?",
+    a: "Das entscheidet ihr, nicht die App. Sie zählt ausschließlich Punkte und rechnet nichts in Geld um – was ein Punkt am Ende wert ist, vereinbart ihr im Flight. Es fließt kein Geld über die App, sie verwahrt und überweist nichts.",
   },
   {
     q: "Kann ich meine Historie aus golf.de übernehmen?",
     a: "Ja. Lade dort den detaillierten Scoring Record als PDF und importiere ihn. Die App liest die Runden direkt im Browser aus der Datei, inklusive der Reihenfolge, die für Exceptional Scores wichtig ist.",
   },
   {
-    q: "Brauche ich eine Internetverbindung?",
-    a: "Nur beim ersten Laden. Danach läuft die App offline weiter, weil sie im Browser zwischengespeichert wird.",
+    q: "Wo liegen meine Daten, und was kostet das?",
+    a: "Die App ist kostenlos, ohne Werbung und ohne Konto. Runden, Plätze und Spiele liegen im Speicher deines Browsers auf deinem Gerät und werden nirgendwohin synchronisiert; ein JSON-Export im Bereich „Daten“ dient als Backup. Übertragen wird nur eine zufällige Installations-ID für den anonymen Nutzungszähler – abschaltbar unter „HCP-Info“, Details in der Datenschutzerklärung.",
   },
 ];
 
@@ -3626,17 +3606,7 @@ function LandingPage({profile, onSave, onOpenLegal}) {
   // Der Desktop-Screenshot ist auf Telefonbreite nicht mehr lesbar, dort zeigt der
   // Aufmacher die Mobilansicht.
   const showDesktopShot = useMediaQuery("(min-width: 760px)");
-
-  const mobileShot = (maxWidth: number) => (
-    <img
-      src="/screenshot-mobile.jpg"
-      width={390}
-      height={780}
-      loading="lazy"
-      alt="Wolf Golf auf einem Smartphone: Handicap-Index, Kennzahlen und Wertungsfenster"
-      style={{display:"block",width:"100%",maxWidth,height:"auto",borderRadius:22,border:"1px solid var(--color-border-tertiary)",boxShadow:"0 18px 42px rgba(8,28,20,0.22)"}}
-    />
-  );
+  const [themeIndex, setThemeIndex] = useState(0);
 
   const primaryButtonStyle: CSSProperties = {
     padding:"13px 22px", borderRadius:"var(--border-radius-md)", border:"none",
@@ -3672,13 +3642,24 @@ function LandingPage({profile, onSave, onOpenLegal}) {
     </svg>
   );
 
+  const mobileShot = (maxWidth: number) => (
+    <img
+      src="/screenshot-mobile.jpg"
+      width={390}
+      height={780}
+      loading="lazy"
+      alt="Wolf Golf auf einem Smartphone: Handicap-Index, Kennzahlen und Wertungsfenster"
+      style={{display:"block",width:"100%",maxWidth,height:"auto",borderRadius:22,border:"1px solid var(--color-border-tertiary)",boxShadow:"0 18px 42px rgba(8,28,20,0.22)"}}
+    />
+  );
+
   return (
     <div style={{maxWidth:1080,margin:"0 auto",padding:appShellPadding,fontFamily:"var(--font-sans)",color:"var(--color-text-primary)",boxSizing:"border-box",width:"100%"}}>
       <header style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
         <BrandMark size={38}/>
         <div style={{minWidth:0}}>
-          <div style={{fontSize:16,fontWeight:650,lineHeight:1.2}}>Wolf Golf</div>
-          <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Handicap-Tracking nach DGV · WHS</div>
+          <div style={{fontSize:16,fontWeight:650,lineHeight:1.2}}>Wolf Golf Club</div>
+          <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Handicap verstehen. Und miteinander spielen.</div>
         </div>
         <button type="button" onClick={()=>scrollTo(startRef)} style={{...greenButtonStyle,marginLeft:"auto",padding:"10px 18px",fontSize:14}}>
           Kostenlos starten
@@ -3688,22 +3669,21 @@ function LandingPage({profile, onSave, onOpenLegal}) {
       <section style={{...cardStyle,padding:"clamp(24px, 4vw, 40px)",marginBottom:16,background:"linear-gradient(145deg, rgba(16,42,33,0.98) 0%, rgba(18,57,44,0.96) 46%, rgba(29,158,117,0.84) 100%)",color:"#fff",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 84% 12%, rgba(255,255,255,0.22), transparent 26%), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",backgroundSize:"auto, 28px 28px",opacity:0.35,pointerEvents:"none"}}/>
         <div style={{position:"relative",maxWidth:720}}>
-          <div style={{...eyebrowStyle,color:"rgba(255,255,255,0.72)"}}>Das World Handicap System, Schritt für Schritt sichtbar</div>
+          <div style={{...eyebrowStyle,color:"rgba(255,255,255,0.72)"}}>Verstehen · Aktuell halten · Mitspielen</div>
           <h1 style={{fontSize:"clamp(30px, 5vw, 46px)",lineHeight:1.06,fontWeight:700,margin:"0 0 14px"}}>
-            Versteh, wie dein Handicap entsteht.
+            Dein Handicap verstehen. Aktuell halten. Und damit spielen.
           </h1>
           <p style={{fontSize:"clamp(16px, 2vw, 18px)",lineHeight:1.6,color:"rgba(255,255,255,0.82)",margin:"0 0 22px",maxWidth:640}}>
-            Hinter deinem Handicap-Index steckt ein umfangreiches Regelwerk: Wertungsfenster, Score Differenziale,
-            Exceptional Scores, die Anfänger-Bremse. Wolf Golf rechnet nicht nur mit, sondern zeigt nach jeder Runde,
-            welche Regel gerade greift und was die nächste Runde bewegen würde. Dazu Matchplay, Nassau, Skins, Wolf
-            und Bingo Bango Bongo für die Flight-Runde.
+            Nach jeder Runde steht dein neuer Index – erklärt, nicht nur ausgerechnet. Und weil er stimmt, wird die
+            nächste Runde mit Freunden zum echten Wettkampf: Matchplay, Nassau, Skins, Wolf und Bingo Bango Bongo,
+            alle mit der richtigen Vorgabe. Kein Verein, kein Beitrag – trotzdem ein Club.
           </p>
           <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:22}}>
             <button type="button" onClick={()=>scrollTo(startRef)} style={primaryButtonStyle}>Kostenlos starten</button>
             <button type="button" onClick={()=>scrollTo(calcRef)} style={secondaryButtonStyle}>So wird gerechnet</button>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {["Neuer Index sofort nach der Runde","Jede Formel erklärt","Für Einsteiger gedacht","0 €, ohne Registrierung"].map(text=>(
+            {["Neuer Index sofort nach der Runde","Fünf Spielformate für den Flight","Offline auf der Runde","0 €, ohne Konto"].map(text=>(
               <span key={text} style={heroChipStyle}>{check}{text}</span>
             ))}
           </div>
@@ -3737,22 +3717,124 @@ function LandingPage({profile, onSave, onOpenLegal}) {
         </figcaption>
       </figure>
 
-      <section style={{marginBottom:26}}>
-        <div style={eyebrowStyle}>Was die App für dich tut</div>
-        <h2 style={sectionHeadingStyle}>Vom Ergebnis zur Erklärung.</h2>
-        <p style={{...bodyTextStyle,maxWidth:680,marginBottom:16}}>
-          Dein Club führt den Index, sagt dir aber nicht, warum er sich bewegt hat – oder eben nicht bewegt hat.
-          Und bis der neue Wert bei golf.de steht, dauert es. Genau diese Lücke füllt Wolf Golf: sofort nach der
-          Runde, in ganzen Sätzen statt in Tabellen.
-        </p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:14}}>
-          {LANDING_FEATURES.map(feature=>(
-            <div key={feature.title} style={{...subtleCardStyle,padding:"20px 20px 22px",display:"flex",flexDirection:"column",gap:10}}>
-              <div style={{width:40,height:40,borderRadius:13,display:"grid",placeItems:"center",background:"rgba(29,158,117,0.12)",color:"#14684f",flexShrink:0}}>
-                <NavIcon paths={feature.icon} size={21}/>
+      <section style={{marginBottom:14}}>
+        <div style={eyebrowStyle}>Zwei Seiten, ein Handicap</div>
+        <h2 style={{...sectionHeadingStyle,marginBottom:16}}>Wechsle die Perspektive.</h2>
+
+        <div role="tablist" aria-label="Themen" style={{
+          display:"inline-flex",position:"relative",padding:4,marginBottom:14,borderRadius:999,
+          background:"var(--color-background-secondary)",border:"1px solid var(--color-border-tertiary)",
+          maxWidth:"100%",boxSizing:"border-box",
+        }}>
+          <span aria-hidden="true" style={{
+            position:"absolute",top:4,bottom:4,left:4,width:"calc(50% - 4px)",borderRadius:999,
+            background:"linear-gradient(135deg, #1D9E75 0%, #14684f 100%)",
+            boxShadow:"0 8px 18px rgba(6,52,38,0.28)",
+            transform:`translateX(${themeIndex * 100}%)`,
+            transition:"transform 320ms cubic-bezier(0.22,0.61,0.36,1)",
+          }}/>
+          {LANDING_THEMES.map((theme, index)=>(
+            <button
+              key={theme.id}
+              type="button"
+              role="tab"
+              id={`landing-tab-${theme.id}`}
+              aria-selected={themeIndex===index}
+              aria-controls={`landing-panel-${theme.id}`}
+              onClick={()=>setThemeIndex(index)}
+              style={{
+                position:"relative",flex:"1 1 0",minWidth:0,padding:"11px 18px",borderRadius:999,border:"none",
+                background:"transparent",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14,
+                fontWeight:themeIndex===index?700:600,
+                color:themeIndex===index?"#fff":"var(--color-text-secondary)",
+                transition:"color 220ms ease",whiteSpace:"nowrap",
+              }}>
+              {theme.tab}
+            </button>
+          ))}
+        </div>
+
+        <div style={{overflow:"hidden",borderRadius:"var(--border-radius-lg)"}}>
+          <div style={{
+            display:"flex",width:"200%",
+            transform:`translateX(-${themeIndex * 50}%)`,
+            transition:"transform 380ms cubic-bezier(0.22,0.61,0.36,1)",
+          }}>
+            {LANDING_THEMES.map((theme, index)=>(
+              <div
+                key={theme.id}
+                role="tabpanel"
+                id={`landing-panel-${theme.id}`}
+                aria-labelledby={`landing-tab-${theme.id}`}
+                aria-hidden={themeIndex!==index}
+                style={{width:"50%",flexShrink:0,boxSizing:"border-box",padding:themeIndex===index?0:"0 0 0 0"}}>
+                <div style={{...cardStyle,padding:"clamp(20px, 3vw, 30px)",display:"flex",gap:26,flexWrap:"wrap",alignItems:"flex-start",height:"100%",boxSizing:"border-box"}}>
+                  <div style={{flex:"1 1 340px",minWidth:0}}>
+                    <div style={eyebrowStyle}>{theme.eyebrow}</div>
+                    <h3 style={{...sectionHeadingStyle,fontSize:23}}>{theme.title}</h3>
+                    <p style={{...bodyTextStyle,marginBottom:16}}>{theme.lead}</p>
+                    <div style={{display:"grid",gap:12}}>
+                      {theme.points.map(([title, text])=>(
+                        <div key={title} style={{display:"flex",gap:11,alignItems:"flex-start"}}>
+                          <span style={{color:"#1D9E75",marginTop:3}}>{check}</span>
+                          <div>
+                            <div style={{fontSize:15,fontWeight:650,marginBottom:2}}>{title}</div>
+                            <div style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)"}}>{text}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {showDesktopShot && theme.id==="spiel" && (
+                    <div style={{flex:"0 1 230px",display:"grid",placeItems:"center",minWidth:0}}>
+                      {mobileShot(220)}
+                    </div>
+                  )}
+                  {showDesktopShot && theme.id==="index" && (
+                    <div style={{flex:"0 1 250px",minWidth:0}}>
+                      <div style={{...subtleCardStyle,padding:"16px 18px"}}>
+                        <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#1D9E75",marginBottom:10}}>So liest sich eine Runde</div>
+                        <div style={{fontSize:13,lineHeight:1.7,color:"var(--color-text-secondary)"}}>
+                          GC Aachen Seffent, 18 Loch<br/>
+                          GBE 91 · CR 70,4 · SR 124
+                        </div>
+                        <div style={{background:"#F5F4F0",borderRadius:"var(--border-radius-md)",padding:"10px 12px",fontFamily:"monospace",fontSize:12.5,lineHeight:1.6,margin:"10px 0",color:"#111"}}>
+                          (91 − 70,4) × 113 ÷ 124<br/>= 18,8
+                        </div>
+                        <div style={{fontSize:13,lineHeight:1.6,color:"var(--color-text-secondary)"}}>
+                          Dein bestes Differenzial – und damit eine der vier Runden, die deinen Index gerade tragen.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div style={{fontSize:18,fontWeight:650,lineHeight:1.3}}>{feature.title}</div>
-              <div style={{fontSize:14,lineHeight:1.65,color:"var(--color-text-secondary)"}}>{feature.text}</div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section style={{...cardStyle,padding:"clamp(20px, 3vw, 28px)",marginBottom:26,background:"linear-gradient(180deg, rgba(240,249,245,0.96) 0%, rgba(255,255,255,0.96) 100%)"}}>
+        <div style={eyebrowStyle}>Warum beides zusammengehört</div>
+        <p style={{fontSize:"clamp(16px, 1.8vw, 18px)",lineHeight:1.6,margin:"0 0 10px",maxWidth:760,fontWeight:500}}>
+          Ein Netto-Spiel ist nur so fair wie die Vorgabe, die dahintersteckt. Wer seinen Index aktuell hält, spielt
+          mit der richtigen – und erst dann ist ein Match zwischen 12 und 28 spannend statt vorentschieden.
+        </p>
+        <p style={{...bodyTextStyle,marginBottom:16,maxWidth:760}}>
+          Deshalb Wolf Golf Club: nicht als Verwaltung für deinen Index, sondern als Ort für die Runden, die ihr
+          miteinander spielt.
+        </p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(190px, 1fr))",gap:12}}>
+          {[
+            ["Runde eintragen","Von Hand oder aus dem golf.de-PDF."],
+            ["Index stimmt","Sofort neu gerechnet, nicht erst nach der Clubverwaltung."],
+            ["Vorgabe stimmt","Course Handicap je Platz und Abschlag."],
+            ["Match wird fair","Und die Runde mit Freunden interessant."],
+          ].map(([title, text], i)=>(
+            <div key={title} style={{...subtleCardStyle,padding:"14px 16px"}}>
+              <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",color:"#1D9E75",marginBottom:6}}>SCHRITT {i+1}</div>
+              <div style={{fontSize:15,fontWeight:650,marginBottom:4}}>{title}</div>
+              <div style={{fontSize:13,lineHeight:1.55,color:"var(--color-text-secondary)"}}>{text}</div>
             </div>
           ))}
         </div>
@@ -3782,48 +3864,6 @@ function LandingPage({profile, onSave, onOpenLegal}) {
           Platzverhältnis-Korrektur (PCC) rechnet sie mit 0, weil sie die Tageswerte nicht kennt. Verbindlich bleibt
           immer der Index, den dein Club über den DGV führt – die App ist dein Zweitblick darauf, keine Ersatz-Verwaltung.
         </div>
-      </section>
-
-      <section style={{marginBottom:26}}>
-        <div style={eyebrowStyle}>In drei Schritten</div>
-        <h2 style={{...sectionHeadingStyle,marginBottom:16}}>Von der Scorekarte zum Verlauf.</h2>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:14}}>
-          {[
-            ["Profil anlegen","Name und Start-HCP eintragen. Keine E-Mail, keine Bestätigung, kein Passwort."],
-            ["Runden erfassen oder importieren","Von Hand in einer halben Minute – oder die komplette Historie in einem Schritt aus dem golf.de-PDF."],
-            ["Verstehen, was sich bewegt","Index, Wertungsfenster und Verlauf aktualisieren sich mit jeder Runde – mit der Erklärung, welche Regel dahintersteckt."],
-          ].map(([title, text], i)=>(
-            <div key={title} style={{...cardStyle,padding:"20px",display:"flex",flexDirection:"column",gap:10}}>
-              <div style={{width:34,height:34,borderRadius:999,background:"rgba(29,158,117,0.12)",color:"#14684f",display:"grid",placeItems:"center",fontSize:15,fontWeight:700}}>{i+1}</div>
-              <div style={{fontSize:17,fontWeight:650}}>{title}</div>
-              <div style={{fontSize:14,lineHeight:1.65,color:"var(--color-text-secondary)"}}>{text}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section style={{...cardStyle,padding:"clamp(22px, 3vw, 32px)",marginBottom:26,display:"flex",gap:28,flexWrap:"wrap",alignItems:"center"}}>
-        <div style={{flex:"1 1 320px",minWidth:0}}>
-          <div style={eyebrowStyle}>Auf dem Platz dabei</div>
-          <h2 style={sectionHeadingStyle}>Auf dem Handy wie eine echte App.</h2>
-          <p style={{...bodyTextStyle,marginBottom:14}}>
-            Über „Zum Startbildschirm hinzufügen“ landet der Tracker als Icon auf deinem Telefon – im Vollbild, ohne
-            Browserleiste. Er lädt aus dem Cache, funktioniert ohne Empfang und synchronisiert nichts im Hintergrund.
-          </p>
-          <div style={{display:"grid",gap:8}}>
-            {["Kein App-Store, keine Installation, kein Update-Zwang","Funktioniert offline, auch mitten auf der Runde","Gleiche Daten wie im Browser auf demselben Gerät"].map(text=>(
-              <div key={text} style={{display:"flex",gap:9,alignItems:"flex-start",fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)"}}>
-                <span style={{color:"#1D9E75",marginTop:3}}>{check}</span>
-                <span>{text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        {showDesktopShot && (
-          <div style={{flex:"0 1 260px",display:"grid",placeItems:"center",minWidth:0}}>
-            {mobileShot(250)}
-          </div>
-        )}
       </section>
 
       <section style={{marginBottom:26}}>
@@ -3867,6 +3907,7 @@ function LandingPage({profile, onSave, onOpenLegal}) {
     </div>
   );
 }
+
 
 const SIDEBAR_WIDTH = 248;
 const SIDEBAR_WIDTH_COLLAPSED = 76;
