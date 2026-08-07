@@ -1,7 +1,9 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import pdfWorkerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
+import qrcode from "qrcode-generator";
 
+import { buildShareUrl, describeShareCard, parseShareHash, type ShareCard } from "./src/shareCard";
 import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline, parseHandicapIndex } from "./src/hcpMath";
 import { suggestHoles, normalizeHoles, totalPar, buildAllocations, scoreMatchplay, scoreSkins, scoreNassau, scoreWolf, scoreBingoBangoBongo, nassauSegments, BBB_AWARDS, stablefordFromHoles, playedHoleCount, DEFAULT_HANDICAP_CONFIG } from "./src/gameMath";
 import { fetchUsageStats, isUsagePingEnabled, setUsagePingEnabled, whenUsagePingSettled, USAGE_ID_RETENTION_DAYS, type UsageStats } from "./src/usagePing";
@@ -1557,7 +1559,88 @@ function RoundList({rounds, courses, onNew, onEdit, onDelete, countingIds, diffB
   );
 }
 
+/** Zeichnet einen QR-Code als SVG – scharf in jeder Groesse, ohne Canvas. */
+function QrCode({text, size=200}) {
+  const path = useMemo(()=>{
+    const qr = qrcode(0, "M");
+    qr.addData(text);
+    qr.make();
+    const count = qr.getModuleCount();
+    const parts: string[] = [];
+    for (let row = 0; row < count; row += 1) {
+      for (let col = 0; col < count; col += 1) {
+        if (qr.isDark(row, col)) parts.push(`M${col} ${row}h1v1h-1z`);
+      }
+    }
+    return {d: parts.join(""), count};
+  },[text]);
+
+  return (
+    <svg
+      viewBox={`-1 -1 ${path.count + 2} ${path.count + 2}`}
+      width={size}
+      height={size}
+      role="img"
+      aria-label="QR-Code zum Scannen mit der Kamera"
+      style={{display:"block",background:"#fff",borderRadius:12,padding:0}}
+    >
+      <rect x={-1} y={-1} width={path.count + 2} height={path.count + 2} fill="#fff"/>
+      <path d={path.d} fill="#111"/>
+    </svg>
+  );
+}
+
+/**
+ * Karte zum Weitergeben: QR-Code plus Link zum Kopieren. Gescannt wird mit der
+ * Kamera-App des Telefons – die oeffnet den Link, und die App bietet die
+ * Uebernahme an. Deshalb braucht es hier keinen eingebauten Scanner.
+ */
+function ShareCardPanel({card, hint}) {
+  const [copied, setCopied] = useState(false);
+  const url = useMemo(()=>buildShareUrl(card, typeof window!=="undefined" ? window.location.origin : LEGAL.site.url),[card]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(()=>setCopied(false), 2000);
+    } catch(e) { /* Zwischenablage nicht erlaubt: Der Link steht ja lesbar da. */ }
+  };
+
+  return (
+    <div style={{display:"flex",gap:18,flexWrap:"wrap",alignItems:"flex-start"}}>
+      <div style={{flexShrink:0,padding:10,borderRadius:16,background:"#fff",border:"1px solid var(--color-border-tertiary)",boxShadow:"var(--shadow-soft)"}}>
+        <QrCode text={url} size={186}/>
+      </div>
+      <div style={{flex:"1 1 220px",minWidth:0}}>
+        <div style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)",marginBottom:12}}>{hint}</div>
+        <div style={{fontSize:12,fontFamily:"monospace",wordBreak:"break-all",color:"var(--color-text-secondary)",background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"8px 10px",marginBottom:10,maxHeight:76,overflow:"auto"}}>
+          {url}
+        </div>
+        <button type="button" onClick={copy} style={{padding:"8px 14px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-secondary)",background:"#F5F4F0",cursor:"pointer",fontSize:13,fontWeight:600,color:"var(--color-text-primary)",fontFamily:"var(--font-sans)"}}>
+          {copied ? "Link kopiert" : "Link kopieren"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CourseList({courses, onNew, onEdit}) {
+  const [shared, setShared] = useState(null);
+  const sharedCard = useMemo(()=>{
+    if (!shared) return null;
+    return {
+      kind: "course",
+      name: shared.name,
+      courseRating: parseFloat(shared.courseRating),
+      slopeRating: parseFloat(shared.slopeRating),
+      par: parseInt(shared.par, 10),
+      tee: shared.tee,
+      holeCount: shared.holeCount,
+      holeData: Array.isArray(shared.holeData) ? shared.holeData.map(hole=>({par:hole.par, si:hole.si})) : undefined,
+    } as ShareCard;
+  },[shared]);
+
   return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
@@ -1571,9 +1654,23 @@ function CourseList({courses, onNew, onEdit}) {
             <div style={{fontWeight:500,fontSize:14,color:"var(--color-text-primary)"}}>{c.name}</div>
             <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>CR {c.courseRating} · SR {c.slopeRating} · Par {c.par} · {c.tee} · 9L PHCP × {getNineHolePhcpFactor(c).toFixed(3)}</div>
           </div>
-          <button onClick={()=>onEdit(c)} style={{padding:"4px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-tertiary)",background:"transparent",cursor:"pointer",fontSize:12,color:"var(--color-text-primary)"}}>Bearbeiten</button>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setShared(c)} style={{padding:"4px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-tertiary)",background:"transparent",cursor:"pointer",fontSize:12,color:"var(--color-text-primary)"}}>Teilen</button>
+            <button onClick={()=>onEdit(c)} style={{padding:"4px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-tertiary)",background:"transparent",cursor:"pointer",fontSize:12,color:"var(--color-text-primary)"}}>Bearbeiten</button>
+          </div>
         </div>
       ))}
+
+      {sharedCard && (
+        <Modal title="Platzkarte teilen" onClose={()=>setShared(null)} maxWidth={620}>
+          <ShareCardPanel
+            card={sharedCard}
+            hint={shared.holeData?.length
+              ? "Mitspieler scannen den Code mit der Kamera ihres Telefons. Sie bekommen Course Rating, Slope, Par und die komplette Scorekarte mit Vorgabenverteilung – ohne etwas abzutippen."
+              : "Mitspieler scannen den Code mit der Kamera ihres Telefons und bekommen Course Rating, Slope und Par. Für die Vorgabenverteilung je Loch trage die Scorekarte unter „Bearbeiten“ ein – sie wird dann mitgeteilt."}
+          />
+        </Modal>
+      )}
     </div>
   );
 }
@@ -4119,8 +4216,61 @@ export default function App() {
   const [form, setForm] = useState(null);
   const [courseForm, setCourseForm] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  // Geteilte Spieler- und Platzkarten kommen als Link mit Nutzlast im Fragment an.
+  const [pendingCard, setPendingCard] = useState<ShareCard | null>(null);
 
   useEffect(()=>saveDB(db),[db]);
+
+  useEffect(()=>{
+    const read = () => {
+      const card = parseShareHash(window.location.hash);
+      if (card) setPendingCard(card);
+    };
+    read();
+    window.addEventListener("hashchange", read);
+    return ()=>window.removeEventListener("hashchange", read);
+  },[]);
+
+  // Nach Uebernahme oder Abbruch muss das Fragment weg, sonst taucht der Dialog
+  // beim naechsten Laden wieder auf.
+  const dismissCard = () => {
+    setPendingCard(null);
+    if (window.location.hash) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  };
+
+  const acceptCard = (card: ShareCard) => {
+    if (card.kind === "player") {
+      updateDB(db=>{
+        const players = [...db.players];
+        const index = players.findIndex(p=>!p.isMe && p.name.toLowerCase() === card.name.toLowerCase());
+        if (index >= 0) players[index] = {...players[index], hcpIndex: card.hcpIndex};
+        else { players.push({id: db.nextPlayerId, name: card.name, hcpIndex: card.hcpIndex, isMe: false}); db.nextPlayerId += 1; }
+        db.players = players;
+        return db;
+      });
+    } else {
+      updateDB(db=>{
+        const courses = [...db.courses];
+        const patch = {
+          name: card.name,
+          courseRating: card.courseRating,
+          slopeRating: card.slopeRating,
+          par: card.par,
+          tee: card.tee || "Gelb",
+          ...(card.holeCount ? {holeCount: card.holeCount} : {}),
+          ...(card.holeData ? {holeData: card.holeData} : {}),
+        };
+        const index = courses.findIndex(c=>c.name.toLowerCase() === card.name.toLowerCase() && (c.tee || "") === (card.tee || c.tee || ""));
+        if (index >= 0) courses[index] = {...courses[index], ...patch};
+        else { courses.push({...patch, notes: "", nineHolePhcpFactor: 0.5, id: db.nextCourseId}); db.nextCourseId += 1; }
+        db.courses = courses;
+        return db;
+      });
+    }
+    dismissCard();
+  };
 
   useEffect(()=>{ if(isDesktop) setNavOpen(false); },[isDesktop]);
 
@@ -4276,12 +4426,30 @@ export default function App() {
 
   const newRound = () => setForm({ date:new Date().toISOString().slice(0,10), mode:"Stableford", format:"Einzel", holes:18, submitted:false, markerSigned:false, nineHoleAllowed:false, playingHcp:displayHcp });
 
+  const cardPrompt = pendingCard && (
+    <Modal title={pendingCard.kind==="player" ? "Mitspieler übernehmen?" : "Platz übernehmen?"} onClose={dismissCard}>
+      <div style={{fontSize:15,fontWeight:600,marginBottom:6}}>{describeShareCard(pendingCard)}</div>
+      <p style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)",marginTop:0}}>
+        {pendingCard.kind==="player"
+          ? "Der Spieler steht dir danach in den Games zur Auswahl. Ein vorhandener Eintrag mit demselben Namen wird aktualisiert."
+          : "Der Platz landet in deiner Platzliste. Ein vorhandener Platz mit demselben Namen und Abschlag wird aktualisiert."}
+      </p>
+      <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
+        <button onClick={()=>acceptCard(pendingCard)} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:COLORS.hcp,color:"#fff",border:"none",cursor:"pointer",fontWeight:600,fontSize:14,fontFamily:"var(--font-sans)"}}>Übernehmen</button>
+        <button onClick={dismissCard} style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:`0.5px solid ${COLORS.border}`,cursor:"pointer",color:"var(--color-text-primary)",fontSize:14,fontFamily:"var(--font-sans)"}}>Verwerfen</button>
+      </div>
+    </Modal>
+  );
+
   // Impressum und Datenschutz muessen auch ohne Profil erreichbar sein, also vor der Landing Page.
   if (!db.profile.name) {
     if (isLegalView(view)) {
       return <LegalStandalonePage page={view} onOpenLegal={setView} onBack={()=>setView("dashboard")}/>;
     }
-    return <LandingPage profile={db.profile} onSave={saveProfile} onOpenLegal={setView}/>;
+    return <>
+      <LandingPage profile={db.profile} onSave={saveProfile} onOpenLegal={setView}/>
+      {cardPrompt}
+    </>;
   }
 
   const activeNavItem = NAV_ITEMS.find(item=>item.id===view);
@@ -4355,7 +4523,16 @@ export default function App() {
           {view==="simulator" && <HcpSimulator courses={db.courses} rounds={db.rounds} startHcp={db.profile.startHcp ?? 54} simulatedRounds={db.simulatedRounds} onAddRound={saveSimulatedRound} onDeleteRound={deleteSimulatedRound} onClearRounds={clearSimulatedRounds}/>}
           {view==="rounds" && <RoundList rounds={sortedRounds} courses={db.courses} onNew={newRound} onEdit={r=>setForm({...r})} onDelete={id=>setDeleteConfirm(id)} countingIds={countingIds} diffByRoundId={diffByRoundId}/>}
           {view==="courses" && <CourseList courses={db.courses} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:"",nineHolePhcpFactor:0.5})} onEdit={c=>setCourseForm({...c})}/>}
-          {view==="profile" && <ProfileForm profile={db.profile} onSave={saveProfile}/>}
+          {view==="profile" && <>
+            <ProfileForm profile={db.profile} onSave={saveProfile}/>
+            <div style={{...cardStyle,padding:"20px 24px",marginTop:14}}>
+              <div style={{fontSize:12,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1D9E75",marginBottom:8}}>Deine Spielerkarte</div>
+              <ShareCardPanel
+                card={{kind:"player", name: db.profile.name, hcpIndex: round1(displayHcp)}}
+                hint="Zeig den Code deinen Mitspielern: Wer ihn mit der Kamera seines Telefons scannt, bekommt deinen Namen und deinen aktuellen HCP-Index in sein Spiel – ohne Abtippen. Der Code enthält nur diese beiden Angaben und läuft nicht über einen Server."
+              />
+            </div>
+          </>}
           {view==="data" && <DataPortability
             db={db}
             onJsonImport={data=>{
@@ -4375,6 +4552,7 @@ export default function App() {
           {view==="info" && <HcpInfo onOpenLegal={selectView}/>}
           {isLegalView(view) && <LegalPage page={view} onOpenLegal={selectView} onBack={()=>selectView("dashboard")} backLabel="Zum Dashboard"/>}
 
+          {cardPrompt}
           <UpdateAppPrompt/>
           <InstallAppPrompt/>
 
