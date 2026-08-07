@@ -1,8 +1,10 @@
 # Aufmacher-Bild: Prompt für die Bildgenerierung
 
-Die Startseite zeigt im Aufmacher `public/hero-fairway.jpg`. Fehlt die Datei, zeichnet
-`HeroScene` in `golf_hcp_tracker.tsx` dieselbe Szene als SVG – es gibt also nie ein
-kaputtes Bild, und ein neues Bild ist ohne Code-Änderung eingesetzt.
+Die Startseite zeigt im Aufmacher `public/hero-fairway.jpg` (Komponente `HeroArt` in
+`golf_hcp_tracker.tsx`). Die Datei muss vorhanden sein – einen gezeichneten Ersatz gibt
+es nicht mehr. Ein neues Motiv ist eingesetzt, indem die Datei ersetzt wird; danach
+`python3 scripts/generate-og-image.py` laufen lassen, damit die Vorschaukarte dasselbe
+Motiv zeigt.
 
 ## Anforderungen an die Datei
 
@@ -59,7 +61,8 @@ kaputtes Bild, und ein neues Bild ist ohne Code-Änderung eingesetzt.
 ## Wenn das Bild da ist
 
 1. Datei als `public/hero-fairway.jpg` ablegen.
-2. Nichts weiter – der Aufmacher nimmt sie automatisch, die gezeichnete Szene tritt
-   zurück.
-3. Für die Vorschau in Netzwerken (`public/og-image.jpg`, 1200 × 630) taugt derselbe
-   Motiv-Ausschnitt im Querformat.
+2. `python3 scripts/generate-og-image.py` – baut `public/og-image.jpg` (1200 × 630) aus
+   demselben Motiv plus Claim und Bildmarke. Braucht Pillow.
+3. Beschnitt prüfen: Am Telefon steht das Bild im Verhältnis 4:5, am Desktop füllt es die
+   ganze Höhe der Aufmacher-Karte. Sitzt der Ausschnitt falsch, `objectPosition` in
+   `HeroArt` anpassen statt das Bild zu ändern (aktuell `center 56%`).
