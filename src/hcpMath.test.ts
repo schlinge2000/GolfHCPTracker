@@ -5,6 +5,7 @@ import {
   BEGINNER_RETENTION_MAX,
   buildIndexTimeline,
   calcHcp,
+  calcExpectedNineHoleDiff,
   calcRawScoreDiff,
   calcScoreDiff,
   exceptionalScoreReduction,
@@ -393,5 +394,42 @@ describe("golf.de import with an exceptional score (Hans-Jürgen 07.08.2026)", (
 
   it("ends at the official golf.de HCPI of 28.9", () => {
     expect(steps[steps.length - 1].hcpAfter).toBe(28.9);
+  });
+});
+
+describe("expected 9-hole differential: an index of 0.0 is a real index", () => {
+  it("treats a scratch index as 0, not as the 54 fallback", () => {
+    // Regression: `parseFloat(...) || 54` liess 0.0 auf den Anfaengerwert kippen,
+    // ein Scratch-Spieler bekam 29.3 statt 1.2 auf jede 9-Loch-Runde addiert.
+    expect(calcExpectedNineHoleDiff(0)).toBe(1.2);
+    expect(calcExpectedNineHoleDiff("0")).toBe(1.2);
+    expect(calcExpectedNineHoleDiff("0.0")).toBe(1.2);
+  });
+
+  it("still falls back to 54 when no index is available", () => {
+    expect(calcExpectedNineHoleDiff(undefined as unknown as number)).toBe(29.3);
+    expect(calcExpectedNineHoleDiff("")).toBe(29.3);
+    expect(calcExpectedNineHoleDiff("keine Zahl")).toBe(29.3);
+  });
+
+  it("clamps plus handicaps to 0 and indexes above 54 to 54", () => {
+    expect(calcExpectedNineHoleDiff(-2.5)).toBe(1.2);
+    expect(calcExpectedNineHoleDiff(60)).toBe(29.3);
+  });
+
+  it("uses the scratch expectation in the 9-hole differential of a scratch player", () => {
+    const round = { holes: 9, gbe: 36, courseRating: 35.6, slopeRating: 113 };
+    // (36 - 35.6) x 113 / 113 = 0.4, dazu 1.2 erwartet -> 1.6, nicht 29.7
+    expect(calcRawScoreDiff(round, 0)).toBe(1.6);
+  });
+});
+
+describe("timeline start index: 0.0 is a real start value", () => {
+  it("starts a scratch player at 0 instead of 54", () => {
+    const steps = buildIndexTimeline(
+      [{ date: "2026-05-01", holes: 18, gbe: 72, courseRating: 72, slopeRating: 113 }],
+      0,
+    );
+    expect(steps[0].preRoundHcp).toBe(0);
   });
 });

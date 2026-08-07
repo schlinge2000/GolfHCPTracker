@@ -8,6 +8,10 @@ export type HandicapRoundLike = {
   holes?: number | string;
 };
 
+function clampHcp(v: number) {
+  return Math.min(54, Math.max(0, v));
+}
+
 export function round1(value: number) {
   return Math.round(value * 10) / 10;
 }
@@ -19,8 +23,29 @@ export function getGrossScore(round: HandicapRoundLike) {
   return Number.isFinite(adjustedGross) ? adjustedGross : null;
 }
 
+/**
+ * Faellt nur bei fehlenden oder unlesbaren Werten auf den WHS-Startwert 54 zurueck.
+ * Wichtig: Ein echter Index von 0.0 ist gueltig und darf nicht als "fehlt" gelten –
+ * `parseFloat(...) || 54` hat genau das getan und Scratch-Spieler wie Anfaenger behandelt.
+ */
+export function parseHandicapIndex(value: number | string) {
+  const parsed = parseFloat(String(value));
+  return Number.isFinite(parsed) ? parsed : 54;
+}
+
+/**
+ * Erwartetes 9-Loch-Differenzial fuer die zweiten neun Loecher, das das WHS bei
+ * 9-Loch-Runden zum tatsaechlichen Differenzial addiert (Regel 5.1b).
+ *
+ * Achtung: Das WHS entnimmt diesen Wert einer veroeffentlichten Tabelle
+ * ("expected Score Differential" in den Rules of Handicapping), die aus einer
+ * modellierten Score-Verteilung stammt. Hier steht stattdessen eine lineare
+ * Annaeherung – erwartetes 18-Loch-Differenzial = 1.04 x Index + 2.4, halbiert.
+ * Die Herkunft der Koeffizienten ist im Projekt nicht belegt; solange die Tabelle
+ * nicht hinterlegt ist, koennen die Werte von der offiziellen Rechnung abweichen.
+ */
 export function calcExpectedNineHoleDiff(handicapIndex: number | string) {
-  const base = Math.min(54, Math.max(0, parseFloat(String(handicapIndex)) || 54));
+  const base = clampHcp(parseHandicapIndex(handicapIndex));
   return round1(((base * 1.04) + 2.4) / 2);
 }
 
@@ -138,10 +163,6 @@ export type TimelineStep<T> = {
   hcpAfter: number;    // geführter Index NACH dieser Runde (inkl. Bremse)
 };
 
-function clampHcp(v: number) {
-  return Math.min(54, Math.max(0, v));
-}
-
 // Chronologische WHS-Engine. Erwartet bereits gefilterte, chronologisch
 // sortierte Runden. Modelliert – in dieser Reihenfolge – pro Runde:
 //   1. Rohdifferenzial (9-Loch nutzt den erwarteten Wert aus dem Index davor)
@@ -159,7 +180,7 @@ export function buildIndexTimeline<T extends TimelineRound>(
   rounds: T[],
   startHcp: number | string = 54,
 ): TimelineStep<T>[] {
-  let currentHcp = clampHcp(parseFloat(String(startHcp)) || 54);
+  let currentHcp = clampHcp(parseHandicapIndex(startHcp));
   const window: { stepIndex: number; diff: number }[] = [];
   const steps: TimelineStep<T>[] = [];
 
