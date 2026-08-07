@@ -20,13 +20,22 @@ const GITHUB_REPO_URL = "https://github.com/schlinge2000/GolfHCPTracker";
 const GITHUB_ISSUES_URL = "https://github.com/schlinge2000/GolfHCPTracker/issues";
 
 // Zentrale Pflege der rechtlichen Angaben: Impressum und Datenschutzerklärung lesen
-// ausschließlich hier. Bewusst ohne Postanschrift und E-Mail, weil die App ein rein
-// privates, nicht-kommerzielles Angebot ohne Impressumspflicht nach § 5 DDG ist und
-// der Kontakt über GitHub-Issues läuft. Wird die App geschäftsmäßig betrieben, müssen
-// Anschrift und E-Mail hier ergänzt und in den Rechtstexten benannt werden.
+// ausschließlich hier. Seit die App unter einer eigenen Domain öffentlich erreichbar
+// ist, dient sie nicht mehr ausschließlich persönlichen oder familiären Zwecken –
+// Name, ladungsfähige Anschrift und E-Mail sind daher Pflichtangaben
+// (§ 18 Abs. 1 MStV, § 5 DDG) und keine freiwillige Zugabe mehr.
 const LEGAL = {
+  site: {
+    domain: "wolfgolf.club",
+    url: "https://wolfgolf.club",
+  },
   operator: {
     name: "Christian Mießen",
+    street: "",       // Straße und Hausnummer (ladungsfähig, kein Postfach)
+    postalCity: "",   // PLZ und Ort
+    country: "Deutschland",
+    email: "",        // Kontakt-E-Mail für Impressum und Datenschutzanfragen
+    phone: "",        // optional, gesetzlich nicht erforderlich
     contactUrl: GITHUB_ISSUES_URL,
     contactLabel: "Issue im GitHub-Repository",
   },
@@ -38,6 +47,16 @@ const LEGAL = {
   },
   updatedAt: "2026-08-07",
 };
+
+const LEGAL_REQUIRED_FIELDS: [string, string][] = [
+  ["Straße und Hausnummer", LEGAL.operator.street],
+  ["PLZ und Ort", LEGAL.operator.postalCity],
+  ["Kontakt-E-Mail", LEGAL.operator.email],
+];
+
+function missingLegalFields() {
+  return LEGAL_REQUIRED_FIELDS.filter(([,value])=>!String(value||"").trim()).map(([label])=>label);
+}
 
 function formatLegalDate(iso) {
   const parts = String(iso||"").split("-");
@@ -2050,14 +2069,48 @@ function LegalList({items}: {items:ReactNode[]}) {
   );
 }
 
+// Pflichtangaben werden nicht stillschweigend weggelassen, sondern sichtbar markiert,
+// solange sie fehlen.
+function LegalValue({value, placeholder}) {
+  const text = String(value||"").trim();
+  if (text) return <>{text}</>;
+  return (
+    <span style={{color:"#8A5310",background:"rgba(214,148,40,0.16)",borderRadius:6,padding:"1px 7px",fontSize:13,fontWeight:600}}>
+      {placeholder}
+    </span>
+  );
+}
+
+function LegalTodoNotice() {
+  const missing = missingLegalFields();
+  if (!missing.length) return null;
+  return (
+    <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:14,background:"linear-gradient(180deg, rgba(255,247,233,0.98) 0%, rgba(255,251,243,0.96) 100%)",border:"1px solid rgba(190,120,20,0.28)"}}>
+      <div style={{fontSize:13,fontWeight:700,color:"#8A5310",marginBottom:6}}>Pflichtangaben fehlen noch</div>
+      <div style={{fontSize:13,lineHeight:1.6,color:"#6B4310"}}>
+        Es fehlen: {missing.join(", ")}. Die App ist unter {LEGAL.site.domain} öffentlich erreichbar und dient damit nicht mehr ausschließlich persönlichen Zwecken – diese Angaben sind nach § 18 Abs. 1 MStV und § 5 DDG erforderlich. Gepflegt werden sie im Quellcode unter <code>LEGAL</code> in <code>golf_hcp_tracker.tsx</code>.
+      </div>
+    </div>
+  );
+}
+
 function LegalContactBlock() {
-  const { name, contactUrl, contactLabel } = LEGAL.operator;
+  const { name, street, postalCity, country, email, phone, contactUrl, contactLabel } = LEGAL.operator;
   return (
     <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:12,fontSize:14,lineHeight:1.7,color:"var(--color-text-secondary)"}}>
       <div style={{fontWeight:600,color:"var(--color-text-primary)"}}>{name}</div>
-      <div>Privatperson, Betrieb als nicht-kommerzielles Freizeitprojekt</div>
+      <div><LegalValue value={street} placeholder="Straße und Hausnummer ergänzen"/></div>
+      <div><LegalValue value={postalCity} placeholder="PLZ und Ort ergänzen"/></div>
+      {country && <div>{country}</div>}
       <div style={{marginTop:8}}>
-        Kontakt: <a href={contactUrl} target="_blank" rel="noreferrer" style={legalLinkStyle}>{contactLabel}</a>
+        E-Mail:{" "}
+        {String(email||"").trim()
+          ? <a href={`mailto:${email}`} style={legalLinkStyle}>{email}</a>
+          : <LegalValue value="" placeholder="Kontakt-E-Mail ergänzen"/>}
+      </div>
+      {String(phone||"").trim() && <div>Telefon: {phone}</div>}
+      <div>
+        Weiterer Kontaktweg: <a href={contactUrl} target="_blank" rel="noreferrer" style={legalLinkStyle}>{contactLabel}</a>
       </div>
     </div>
   );
@@ -2066,19 +2119,20 @@ function LegalContactBlock() {
 function Impressum() {
   return (
     <div>
-      <LegalCard title="Anbieter">
-        <LegalP>Verantwortlich für dieses Angebot und für die Inhalte nach § 18 Abs. 2 Medienstaatsvertrag (MStV):</LegalP>
+      <LegalTodoNotice/>
+
+      <LegalCard title="Angaben gemäß § 5 DDG und § 18 Abs. 1 MStV">
+        <LegalP>Anbieter des unter {LEGAL.site.domain} erreichbaren Angebots und verantwortlich für den Inhalt nach § 18 Abs. 2 Medienstaatsvertrag (MStV):</LegalP>
         <LegalContactBlock/>
-        <LegalP>Fehler, Rückfragen und Verbesserungsvorschläge werden dort am schnellsten gesehen:</LegalP>
+        <LegalP>Die E-Mail-Adresse ist der offizielle Kontaktweg für rechtliche Anliegen und Datenschutzanfragen. Fehler, Rückfragen und Verbesserungsvorschläge zur App werden dagegen im Repository am schnellsten gesehen:</LegalP>
         <div style={{fontSize:14,lineHeight:1.8}}>
           <a href={GITHUB_ISSUES_URL} target="_blank" rel="noreferrer" style={legalLinkStyle}>Issue auf GitHub anlegen</a>
         </div>
       </LegalCard>
 
-      <LegalCard title="Art des Angebots und Impressumspflicht">
-        <LegalP>Der Golf HCP Tracker ist ein privates, nicht-kommerzielles Freizeitprojekt. Die App wird ohne Gewinnerzielungsabsicht bereitgestellt: Es werden keine Verträge geschlossen, keine Zahlungen abgewickelt, keine Werbung ausgeliefert und keine Daten vermarktet.</LegalP>
-        <LegalP>Die Impressumspflicht nach § 5 Digitale-Dienste-Gesetz (DDG) gilt für geschäftsmäßige, in der Regel gegen Entgelt angebotene digitale Dienste. Für ein rein privates Angebot wie dieses greift sie nicht. Deshalb wird hier bewusst keine Postanschrift veröffentlicht; der Kontakt läuft über das öffentliche Repository.</LegalP>
-        <LegalP>Sollte die App künftig geschäftsmäßig betrieben werden – etwa mit Werbung, Bezahlfunktionen oder als Angebot eines Unternehmens –, werden Anschrift, E-Mail-Adresse und die weiteren Pflichtangaben nach § 5 DDG hier ergänzt.</LegalP>
+      <LegalCard title="Art des Angebots">
+        <LegalP>Der Golf HCP Tracker ist ein kostenloses, nicht-kommerzielles Freizeitprojekt. Es gibt keine Werbung, keine Bezahlfunktionen, keine Verträge, keine Spendenaufrufe und keine Vermarktung von Daten. Die Nutzung ist ohne Registrierung möglich.</LegalP>
+        <LegalP>Seit die App unter einer eigenen Domain öffentlich abrufbar ist, dient sie nicht mehr ausschließlich persönlichen oder familiären Zwecken. Deshalb enthält dieses Impressum die vollständige Anbieterkennzeichnung mit Name, ladungsfähiger Anschrift und E-Mail-Adresse – unabhängig davon, dass mit der App kein Geld verdient wird.</LegalP>
       </LegalCard>
 
       <LegalCard title="Haftung für Inhalte und Berechnungen">
@@ -2110,6 +2164,8 @@ function Datenschutz() {
 
   return (
     <div>
+      <LegalTodoNotice/>
+
       <LegalCard title="Das Wichtigste in vier Punkten">
         <LegalList items={[
           "Deine Runden, Plätze und Profildaten bleiben im Speicher deines Browsers auf deinem Gerät. Es gibt kein Benutzerkonto und keine Server-Synchronisation.",
@@ -2120,9 +2176,9 @@ function Datenschutz() {
       </LegalCard>
 
       <LegalCard title="1. Verantwortlicher">
-        <LegalP>Verantwortlicher im Sinne von Art. 4 Nr. 7 DSGVO für die Bereitstellung dieser App:</LegalP>
+        <LegalP>Diese Erklärung gilt für die unter {LEGAL.site.domain} erreichbare App. Verantwortlicher im Sinne von Art. 4 Nr. 7 DSGVO ist:</LegalP>
         <LegalContactBlock/>
-        <LegalP>Anfragen zum Datenschutz erreichen den Betreiber über ein Issue im Repository. Beachte dabei, dass Issues öffentlich sichtbar sind – gib dort keine Daten an, die nicht öffentlich werden sollen. Ein Datenschutzbeauftragter ist nicht bestellt, da die Voraussetzungen dafür nicht vorliegen.</LegalP>
+        <LegalP>Anfragen zum Datenschutz richtest du am besten per E-Mail an die oben genannte Adresse. Der Weg über ein GitHub-Issue funktioniert ebenfalls, ist aber öffentlich einsehbar – gib dort nichts an, was nicht öffentlich werden soll. Ein Datenschutzbeauftragter ist nicht bestellt, da die Voraussetzungen dafür nicht vorliegen.</LegalP>
       </LegalCard>
 
       <LegalCard title="2. Daten, die nur auf deinem Gerät liegen">
@@ -2178,7 +2234,7 @@ function Datenschutz() {
 
       <LegalCard title="9. Deine Rechte">
         <LegalP>Du hast nach der DSGVO das Recht auf Auskunft (Art. 15), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch gegen Verarbeitungen auf Grundlage berechtigter Interessen (Art. 21). Außerdem kannst du dich bei einer Datenschutz-Aufsichtsbehörde beschweren – zuständig ist die Behörde deines Wohnsitz-Bundeslandes oder die des Betreibers.</LegalP>
-        <LegalP>Praktischer Hinweis: Zu deinen lokal gespeicherten Runden kann der Betreiber keine Auskunft erteilen und sie auch nicht löschen, weil er keinen Zugriff darauf hat. Diese Daten hast du selbst vollständig in der Hand – Auskunft und Datenübertragbarkeit erfüllt der JSON-Export im Bereich „Daten“. Für Anfragen zu den Server-Logfiles nutze den in Abschnitt 1 genannten Kontaktweg.</LegalP>
+        <LegalP>Praktischer Hinweis: Zu deinen lokal gespeicherten Runden kann der Betreiber keine Auskunft erteilen und sie auch nicht löschen, weil er keinen Zugriff darauf hat. Diese Daten hast du selbst vollständig in der Hand – Auskunft und Datenübertragbarkeit erfüllt der JSON-Export im Bereich „Daten“. Für Anfragen zu den Server-Logfiles genügt eine E-Mail an die in Abschnitt 1 genannte Adresse.</LegalP>
       </LegalCard>
 
       <LegalCard title="10. Stand und Änderungen">
@@ -2255,7 +2311,7 @@ function AppFooter({onOpenLegal}) {
             <button type="button" onClick={()=>onOpenLegal("datenschutz")} style={legalLinkButtonStyle}>Datenschutzerklärung</button>
           </div>
           <div style={{fontSize:12,color:"var(--color-text-secondary)",lineHeight:1.6,marginTop:8}}>
-            Privates, nicht-kommerzielles Projekt. Daten bleiben lokal im Browser: kein Login, kein Tracking.
+            Kostenloses, nicht-kommerzielles Projekt. Daten bleiben lokal im Browser: kein Login, kein Tracking.
           </div>
         </div>
       </div>
