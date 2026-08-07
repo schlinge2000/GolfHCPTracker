@@ -3529,8 +3529,8 @@ function AppFooter({onOpenLegal}) {
 const LANDING_FEATURES = [
   {
     icon: ["M6 3h12v18H6z","M9 7h6","M9 11h.01","M12 11h.01","M15 11h.01","M9 15h.01","M12 15h.01","M15 15h.01"],
-    title: "Rechnet nach den WHS-Regeln",
-    text: "Score Differenzial aus GBE, Course Rating und Slope. Danach die besten Differenziale der letzten 20 Runden plus die WHS-Anpassung für kleine Rundenzahlen – Schritt für Schritt nachlesbar statt Blackbox.",
+    title: "Jede Formel zum Nachlesen",
+    text: "Score Differenzial aus GBE, Course Rating und Slope, dann die besten Differenziale der letzten 20 Runden plus die Anpassung für kleine Rundenzahlen. Der Bereich HCP-Info erklärt jeden Schritt mit Formel und Beispiel – auch wenn du mit WHS noch nie zu tun hattest.",
   },
   {
     icon: ["M14 3v5h5","M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5Z","M12 12v5","M9.5 14.5L12 17l2.5-2.5"],
@@ -3550,7 +3550,7 @@ const LANDING_FEATURES = [
   {
     icon: ["M4 13h6V4H4v9Z","M14 20h6v-9h-6v9Z","M4 20h6v-4H4v4Z","M14 8h6V4h-6v4Z"],
     title: "Du siehst, was zählt",
-    text: "Welche Runden aktuell in deinen Index eingehen, welche als nächste aus dem Fenster fällt und welches Ergebnis die schlechteste zählende Runde verdrängt.",
+    text: "Welche Runden aktuell in deinen Index eingehen, welche als nächste aus dem Fenster fällt und welches Ergebnis die schlechteste zählende Runde verdrängt. Damit wird verständlich, warum eine gute Runde manchmal nichts ändert.",
   },
   {
     icon: ["M7 3h10a1 1 0 011 1v16a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1Z","M10.5 18h3"],
@@ -3587,6 +3587,10 @@ const LANDING_FAQ = [
   {
     q: "Ist das mein offizielles Handicap?",
     a: "Nein. Die App rechnet nach den WHS-Regeln des DGV, verbindlich bleibt aber der Index, den dein Heimatclub führt. Der berechnete Wert entspricht dem, was golf.de als „Berechneter HCPI“ ausweist.",
+  },
+  {
+    q: "Ich fange gerade mit Golf an – hilft mir das?",
+    a: "Dafür ist die App vor allem gedacht. Am Anfang bewegt sich der Index in Sprüngen, die von außen willkürlich wirken: die Anfänger-Bremse ab 26,9, die Anpassung bei wenigen Runden, Ausnahmerunden. Die App zeigt nach jeder Runde, welche dieser Regeln gegriffen hat – und im Bereich HCP-Info steht jede Formel mit Beispiel.",
   },
   {
     q: "Was kostet die App?",
@@ -3679,21 +3683,22 @@ function LandingPage({profile, onSave, onOpenLegal}) {
       <section style={{...cardStyle,padding:"clamp(24px, 4vw, 40px)",marginBottom:16,background:"linear-gradient(145deg, rgba(16,42,33,0.98) 0%, rgba(18,57,44,0.96) 46%, rgba(29,158,117,0.84) 100%)",color:"#fff",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 84% 12%, rgba(255,255,255,0.22), transparent 26%), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",backgroundSize:"auto, 28px 28px",opacity:0.35,pointerEvents:"none"}}/>
         <div style={{position:"relative",maxWidth:720}}>
-          <div style={{...eyebrowStyle,color:"rgba(255,255,255,0.72)"}}>Handicap-Tracking nach dem World Handicap System</div>
+          <div style={{...eyebrowStyle,color:"rgba(255,255,255,0.72)"}}>Das World Handicap System, Schritt für Schritt sichtbar</div>
           <h1 style={{fontSize:"clamp(30px, 5vw, 46px)",lineHeight:1.06,fontWeight:700,margin:"0 0 14px"}}>
-            Dein Handicap. Nachvollziehbar statt geraten.
+            Versteh, wie dein Handicap entsteht.
           </h1>
-          <p style={{fontSize:"clamp(16px, 2vw, 18px)",lineHeight:1.6,color:"rgba(255,255,255,0.82)",margin:"0 0 22px",maxWidth:620}}>
-            Runden erfassen, Differenziale sehen, Entwicklung verfolgen – mit derselben Rechenlogik, die der DGV im
-            World Handicap System anwendet. Dazu Matchplay, Nassau, Skins, Wolf und Bingo Bango Bongo für die
-            Flight-Runde. Kostenlos, ohne Konto, komplett in deinem Browser.
+          <p style={{fontSize:"clamp(16px, 2vw, 18px)",lineHeight:1.6,color:"rgba(255,255,255,0.82)",margin:"0 0 22px",maxWidth:640}}>
+            Hinter deinem Handicap-Index steckt ein umfangreiches Regelwerk: Wertungsfenster, Score Differenziale,
+            Exceptional Scores, die Anfänger-Bremse. Wolf Golf rechnet nicht nur mit, sondern zeigt nach jeder Runde,
+            welche Regel gerade greift und was die nächste Runde bewegen würde. Dazu Matchplay, Nassau, Skins, Wolf
+            und Bingo Bango Bongo für die Flight-Runde.
           </p>
           <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:22}}>
             <button type="button" onClick={()=>scrollTo(startRef)} style={primaryButtonStyle}>Kostenlos starten</button>
             <button type="button" onClick={()=>scrollTo(calcRef)} style={secondaryButtonStyle}>So wird gerechnet</button>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {["0 €, keine Werbung","Ohne Registrierung","Daten bleiben auf deinem Gerät","Offline nutzbar"].map(text=>(
+            {["Jede Formel erklärt","Für Einsteiger gedacht","0 €, ohne Registrierung","Offline nutzbar"].map(text=>(
               <span key={text} style={heroChipStyle}>{check}{text}</span>
             ))}
           </div>
@@ -3729,10 +3734,10 @@ function LandingPage({profile, onSave, onOpenLegal}) {
 
       <section style={{marginBottom:26}}>
         <div style={eyebrowStyle}>Was die App für dich tut</div>
-        <h2 style={sectionHeadingStyle}>Alles zwischen Scorekarte, Handicap-Index und Flight-Wette.</h2>
+        <h2 style={sectionHeadingStyle}>Vom Ergebnis zur Erklärung.</h2>
         <p style={{...bodyTextStyle,maxWidth:680,marginBottom:16}}>
-          Kein Excel, keine Zettelwirtschaft und kein Warten auf die Clubverwaltung – du siehst nach jeder Runde,
-          wo dein Index steht und warum.
+          Dein Club führt den Index, sagt dir aber nicht, warum er sich bewegt hat – oder eben nicht bewegt hat.
+          Genau das macht Wolf Golf sichtbar: nach jeder Runde, in ganzen Sätzen statt in Tabellen.
         </p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:14}}>
           {LANDING_FEATURES.map(feature=>(
@@ -3748,11 +3753,12 @@ function LandingPage({profile, onSave, onOpenLegal}) {
       </section>
 
       <section ref={calcRef} style={{...cardStyle,padding:"clamp(22px, 3vw, 32px)",marginBottom:26,background:"linear-gradient(160deg, rgba(20,46,37,0.97) 0%, rgba(18,57,44,0.95) 100%)",color:"#fff"}}>
-        <div style={{...eyebrowStyle,color:"rgba(255,255,255,0.7)"}}>Die Details, an denen andere Tracker scheitern</div>
+        <div style={{...eyebrowStyle,color:"rgba(255,255,255,0.7)"}}>Das Regelwerk hinter der Zahl</div>
         <h2 style={{...sectionHeadingStyle,color:"#fff",maxWidth:640}}>WHS ist mehr als ein Mittelwert.</h2>
         <p style={{fontSize:15,lineHeight:1.65,color:"rgba(255,255,255,0.78)",margin:"0 0 20px",maxWidth:660}}>
-          Ein Durchschnitt über die besten Runden ist schnell gebaut. Die Regeln, die deinen Index wirklich bewegen,
-          stecken in den Sonderfällen – und die rechnet diese App mit.
+          Ein Durchschnitt über die besten Runden ist schnell erklärt. Die Regeln, die deinen Index tatsächlich
+          bewegen, stecken in den Sonderfällen – und die sind der Grund, warum das Handicap besonders am Anfang
+          unübersichtlich wirkt. Wolf Golf rechnet sie mit und schreibt dazu, was passiert ist.
         </p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(270px, 1fr))",gap:14,marginBottom:18}}>
           {LANDING_DETAILS.map(detail=>(
@@ -3779,7 +3785,7 @@ function LandingPage({profile, onSave, onOpenLegal}) {
           {[
             ["Profil anlegen","Name und Start-HCP eintragen. Keine E-Mail, keine Bestätigung, kein Passwort."],
             ["Runden erfassen oder importieren","Von Hand in einer halben Minute – oder die komplette Historie in einem Schritt aus dem golf.de-PDF."],
-            ["Entwicklung verfolgen","Index, Wertungsfenster und Verlauf aktualisieren sich mit jeder gespeicherten Runde."],
+            ["Verstehen, was sich bewegt","Index, Wertungsfenster und Verlauf aktualisieren sich mit jeder Runde – mit der Erklärung, welche Regel dahintersteckt."],
           ].map(([title, text], i)=>(
             <div key={title} style={{...cardStyle,padding:"20px",display:"flex",flexDirection:"column",gap:10}}>
               <div style={{width:34,height:34,borderRadius:999,background:"rgba(29,158,117,0.12)",color:"#14684f",display:"grid",placeItems:"center",fontSize:15,fontWeight:700}}>{i+1}</div>
