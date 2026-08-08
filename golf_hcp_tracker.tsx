@@ -6,6 +6,7 @@ import qrcode from "qrcode-generator";
 import { buildShareUrl, describeShareCard, parseShareHash, parseShareLink, type GameCard, type ShareCard } from "./src/shareCard";
 import { classifyCameraError, createDetector, drawFrame, isCameraSupported, startCamera, stopCamera, type CameraFailure } from "./src/qrScanner";
 import { calcCourseHandicap, calcExpectedNineHoleDiff, calcScoreDiff, round1, getGrossScore, calcHcp, getHandicapRule, HCP_RULES, applyBeginnerRetention, exceptionalScoreReduction, buildIndexTimeline, parseHandicapIndex } from "./src/hcpMath";
+import { isUsableScorecard, parseScorecardPdfLines, type ParsedScorecard } from "./src/scorecardPdf";
 import { suggestHoles, normalizeHoles, totalPar, buildAllocations, scoreMatchplay, scoreSkins, scoreNassau, scoreWolf, scoreBingoBangoBongo, nassauSegments, BBB_AWARDS, stablefordFromHoles, playedHoleCount, DEFAULT_HANDICAP_CONFIG } from "./src/gameMath";
 import { fetchUsageStats, isUsagePingEnabled, setUsagePingEnabled, whenUsagePingSettled, USAGE_ID_RETENTION_DAYS, type UsageStats } from "./src/usagePing";
 
@@ -358,6 +359,39 @@ function buildRoundImportKey(round) {
 
 function isGolfDeImportedRound(round) {
   return round?.source === "golf.de-pdf";
+}
+
+/**
+ * Zeilen aus einem PDF, nach Y-Position gruppiert und nach X sortiert.
+ * Eine Scorekarte ist eine Tabelle: die Reihenfolge der Textelemente im PDF
+ * folgt ihr nicht, die Position schon.
+ */
+async function extractPdfLinesByPosition(file) {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+    pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+  }
+  const bytes = new Uint8Array(await readFileAsArrayBuffer(file));
+  const document = await pdfjs.getDocument({ data: bytes, disableWorker: true } as any).promise;
+  const lines = [];
+
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber);
+    const content = await page.getTextContent();
+    const rows = new Map();
+    for (const item of content.items) {
+      if (!("str" in item) || !item.str.trim()) continue;
+      // Auf 3 Punkte gerundet: Zellen einer Zeile sitzen selten exakt gleich hoch.
+      const y = Math.round(item.transform[5] / 3) * 3;
+      if (!rows.has(y)) rows.set(y, []);
+      rows.get(y).push({ x: item.transform[4], text: item.str.trim() });
+    }
+    for (const [, items] of [...rows.entries()].sort((a, b)=>b[0] - a[0])) {
+      lines.push(items.sort((a, b)=>a.x - b.x).map(entry=>entry.text).join(" "));
+    }
+  }
+
+  return lines;
 }
 
 async function extractGolfDePdfText(file) {
@@ -1500,7 +1534,7 @@ function RoundForm({initial, courses, currentHcp, recentDiffs=[], nextSimulation
 // Wird nur für Netto-Spiele in der Games-Rubrik gebraucht, deshalb standardmäßig
 // eingeklappt. Die App schlägt eine Verteilung vor, korrigiert wird nach der
 // echten Scorekarte.
-function HoleDataEditor({holeCount, holeData, coursePar, onChange, onHoleCountChange}) {
+function HoleDataEditor({holeCount, holeData, coursePar, onChange, onHoleCountChange, onSuggest}) {
   const t = useT();
   const holes = holeData ?? [];
   const parSum = totalPar(holes);
@@ -1526,7 +1560,7 @@ function HoleDataEditor({holeCount, holeData, coursePar, onChange, onHoleCountCh
           <option value={18}>{t("18 Loch","18 holes")}</option>
           <option value={9}>{t("9 Loch","9 holes")}</option>
         </select>
-        <button type="button" onClick={()=>onChange(suggestHoles(holeCount, coursePar))}
+        <button type="button" onClick={()=>{ onSuggest?.(); onChange(suggestHoles(holeCount, coursePar)); }}
           style={{padding:"9px 14px",borderRadius:"var(--border-radius-md)",border:"1px solid var(--color-border-secondary)",background:"rgba(255,255,255,0.92)",cursor:"pointer",fontSize:13,fontWeight:600,color:"var(--color-text-primary)"}}>
           {t("Vorschlag neu erzeugen","Suggest again")}
         </button>
@@ -1572,12 +1606,72 @@ function CourseForm({initial, rounds, startHcp, onSave, onCancel}) {
   const holeCount = c.holeCount ?? 18;
   const openHoleEditor = () => {
     setShowHoles(true);
-    if (!c.holeData?.length) setC(prev=>({...prev, holeCount, holeData: suggestHoles(holeCount, prev.par)}));
+    if (!c.holeData?.length) { setHolesFromCard(false); setC(prev=>({...prev, holeCount, holeData: suggestHoles(holeCount, prev.par)})); }
   };
-  const changeHoleCount = count => setC(prev=>({...prev, holeCount: count, holeData: suggestHoles(count, prev.par)}));
+  const changeHoleCount = count => { setHolesFromCard(false); setC(prev=>({...prev, holeCount: count, holeData: suggestHoles(count, prev.par)})); };
+
+  // Scorekarte als PDF: Par und Stroke Index je Loch stehen dort drin – die
+  // Angaben, die der golf.de-Import nicht mitbringt. Uebernommen wird alles in
+  // das Formular, gespeichert wird erst nach dem Durchsehen.
+  const [pdfStatus, setPdfStatus] = useState({ tone:"", message:"" });
+  // Merkt sich, ob die Tabelle aus der Karte kommt: dann ist sie kein Vorschlag mehr.
+  const [holesFromCard, setHolesFromCard] = useState(false);
+  const warningText = warning => ({
+    "holes-incomplete": t("Es fehlen Löcher – bitte die Tabelle unten prüfen.","Holes are missing – please check the table below."),
+    "si-not-unique": t("Die Stroke Indizes sind nicht eindeutig – bitte prüfen.","The stroke indexes are not unique – please check."),
+    "par-mismatch": t("Die Par-Summe der Karte weicht von den Löchern ab.","The card's par total differs from the holes."),
+    "rating-missing": t("Course Rating und Slope standen nicht auf der Karte.","Course rating and slope were not on the card."),
+  })[warning] ?? warning;
+
+  const importScorecard = async event => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setPdfStatus({ tone:"", message:t("Karte wird gelesen …","Reading the card …") });
+    try {
+      const parsed = parseScorecardPdfLines(await extractPdfLinesByPosition(file));
+      if (!isUsableScorecard(parsed)) {
+        setPdfStatus({ tone:"error", message:t("In diesem PDF steht keine lesbare Lochtabelle. Gescannte Karten sind reine Bilder – dann die Löcher unten von Hand eintragen.","This PDF has no readable hole table. Scanned cards are images only – enter the holes by hand below.") });
+        return;
+      }
+      setC(prev=>({
+        ...prev,
+        name: prev.name || parsed.courseName || "",
+        tee: parsed.tee ? mapGolfDeTee(parsed.tee) : prev.tee,
+        courseRating: parsed.courseRating ?? prev.courseRating,
+        slopeRating: parsed.slopeRating ?? prev.slopeRating,
+        par: parsed.par ?? prev.par,
+        holeCount: parsed.holeCount,
+        holeData: parsed.holes.map(hole=>({ nr:hole.nr, par:hole.par, si:hole.si })),
+      }));
+      setShowHoles(true);
+      setHolesFromCard(true);
+      const summary = t(`${parsed.holes.length} Löcher übernommen · Par ${parsed.par}`,`${parsed.holes.length} holes taken over · par ${parsed.par}`);
+      const notes = parsed.warnings.map(warningText);
+      setPdfStatus({ tone:notes.length ? "error" : "success", message:[summary, ...notes].join(" · ") });
+    } catch(error) {
+      setPdfStatus({ tone:"error", message:t("Das PDF konnte nicht gelesen werden.","That PDF could not be read.") });
+    }
+  };
 
   return (
     <div>
+      <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:16,border:"1px solid rgba(12,68,124,0.2)",background:"linear-gradient(180deg, rgba(240,246,255,0.96) 0%, rgba(255,255,255,0.96) 100%)"}}>
+        <div style={{fontSize:14,fontWeight:650,marginBottom:4}}>{t("Scorekarte als PDF","Scorecard as a PDF")}</div>
+        <div style={{fontSize:13,lineHeight:1.55,color:"var(--color-text-secondary)",marginBottom:12}}>
+          {t("Die Online-Scorekarte deines Clubs bringt Par und Stroke Index für jedes Loch mit – genau das, was im golf.de-Import fehlt. Platzname, Abschlag, Course Rating und Slope kommen mit.",
+             "Your club's online scorecard carries par and stroke index for every hole – exactly what the golf.de import lacks. Course name, tee, course rating and slope come along.")}
+        </div>
+        <label style={{display:"inline-block",padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"#0C447C",border:"1px solid #0C447C",cursor:"pointer",fontWeight:600,fontSize:14,color:"#fff"}}>
+          {t("PDF wählen","Choose a PDF")}
+          <input type="file" accept=".pdf,application/pdf" onChange={importScorecard} style={{display:"none"}}/>
+        </label>
+        {pdfStatus.message && (
+          <div style={{marginTop:10,fontSize:13,lineHeight:1.5,color:pdfStatus.tone==="error"?"#E24B4A":pdfStatus.tone==="success"?"#1D9E75":"var(--color-text-secondary)",fontWeight:pdfStatus.tone==="success"?500:400}}>
+            {pdfStatus.message}
+          </div>
+        )}
+      </div>
       {field(t("Platzname","Course name"), <input style={inp} value={c.name||""} onChange={e=>set("name",e.target.value)} placeholder={t("GC Bergisch Land","Royal County Down")}/>)}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
         {field(t("Course Rating","Course rating"), <input type="number" step="0.1" style={inp} value={c.courseRating||""} onChange={e=>set("courseRating",parseFloat(e.target.value))} placeholder="36.0"/>)}
@@ -1600,7 +1694,10 @@ function CourseForm({initial, rounds, startHcp, onSave, onCancel}) {
             coursePar={c.par}
             onChange={data=>set("holeData", data)}
             onHoleCountChange={changeHoleCount}
-          />, t("Vorschlag – bitte an die echte Scorekarte anpassen","A suggestion – please match it to the real scorecard"))
+            onSuggest={()=>setHolesFromCard(false)}
+          />, holesFromCard
+              ? t("Aus der Scorekarte übernommen – bitte kurz prüfen","Taken from the scorecard – please give it a quick check")
+              : t("Vorschlag – bitte an die echte Scorekarte anpassen","A suggestion – please match it to the real scorecard"))
         : field(t("Scorekarte (für Games)","Scorecard (for games)"), <button type="button" onClick={openHoleEditor}
             style={{padding:"9px 14px",borderRadius:"var(--border-radius-md)",border:"1px solid var(--color-border-secondary)",background:"rgba(255,255,255,0.92)",cursor:"pointer",fontSize:13,fontWeight:600,color:"var(--color-text-primary)"}}>
             {t("Par und Vorgabenverteilung erfassen","Enter par and stroke allocation")}
