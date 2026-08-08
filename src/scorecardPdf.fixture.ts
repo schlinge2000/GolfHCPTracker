@@ -1,17 +1,19 @@
-// Textzeilen aus einer echten PC-CADDIE-Scorekarte (Haus Kambach, 18 Loch, gelb).
+// Textzeilen einer PC-CADDIE-Scorekarte (Haus Kambach, 18 Loch, gelb).
+// Name, Index und Datum sind ersetzt – die Zeilen der Karte selbst (Platz,
+// Abschlag, Rating, Loecher) stehen unveraendert, denn genau die pruefen wir.
 // So kommen sie aus dem PDF-Textlayer heraus, wenn man die Textelemente nach
 // Y-Position gruppiert und nach X sortiert – inklusive der Eigenheiten: leere
 // "0 0"-Zeilen aus den Score-Spalten, Zeilenumbrueche mitten in der Tabelle.
 export const KAMBACH_SCORECARD_LINES = [
   "Angemeldet als",
-  "Christian Miessen",
+  "Max Mustermann",
   "Haus Kambach",
   "Online Scorekarte",
   "PERSÖNLICHE SCOREKARTE",
   "HCPI(R)",
-  "30",
+  "26",
   "Geschlecht",
-  "männlich",
+  "m",
   "Platz",
   "Haus Kambach 18 Loch",
   "Tee",
@@ -19,7 +21,7 @@ export const KAMBACH_SCORECARD_LINES = [
   "Handicap 33",
   "Tee Handicaps gelb: 33, blau: 29",
   "Datum",
-  "08.08.2026",
+  "01.01.2026",
   "Notiz",
   "Loch Par Index Score B N",
   "0 0",
