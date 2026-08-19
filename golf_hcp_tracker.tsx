@@ -208,7 +208,12 @@ function normalizeGame(game) {
     participants: Array.isArray(game?.participants) ? game.participants : [],
     wolfChoices: Array.from({length: holeCount}, (_, index)=>{
       const entry = Array.isArray(game?.wolfChoices) ? game.wolfChoices[index] : null;
-      return entry && typeof entry === "object" ? {partnerId: entry.partnerId ?? null, blind: Boolean(entry.blind)} : {partnerId:null, blind:false};
+      // "lone" trennt die Ansage "ich spiele allein" von "noch nichts gesagt".
+      // Alte Spiele kennen das Zeichen nicht; dort gilt Blind als Ansage, und
+      // ein leerer Eintrag wird wieder zur offenen Wahl.
+      return entry && typeof entry === "object"
+        ? {partnerId: entry.partnerId ?? null, blind: Boolean(entry.blind), lone: Boolean(entry.lone) || Boolean(entry.blind)}
+        : {partnerId:null, blind:false, lone:false};
     }),
     bbbAwards: Array.from({length: holeCount}, (_, index)=>{
       const entry = Array.isArray(game?.bbbAwards) ? game.bbbAwards[index] : null;
@@ -2452,12 +2457,15 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
 
   const needsDuel = formats.some(id=>DUEL_FORMATS.includes(id));
   const duelLabel = formats.filter(id=>DUEL_FORMATS.includes(id))
-    .map(id=>GAME_FORMATS.find(format=>format.id === id)?.label).join(" / ");
+    .map(id=>{
+      const format = GAME_FORMATS.find(entry=>entry.id === id);
+      return format ? t(format.label) : id;
+    }).join(" / ");
 
   const problems = [];
   if (!course) problems.push(t("Bitte einen Platz wählen – Games brauchen Course Rating, Slope und die Scorekarte.","Please pick a course – games need course rating, slope and the scorecard."));
   if (selected.length < 2) problems.push(t("Mindestens zwei Teilnehmer auswählen.","Select at least two players."));
-  if (!formats.length) problems.push("Mindestens ein Spielformat aktivieren.");
+  if (!formats.length) problems.push(t("Mindestens ein Spielformat aktivieren.","Activate at least one game format."));
   if (needsDuel && effectiveMatchup.length !== 2) problems.push(t(`Für ${duelLabel} genau zwei Kontrahenten markieren.`,`Mark exactly two opponents for ${duelLabel}.`));
   if (formats.includes("wolf") && (selected.length < 3 || selected.length > 5)) problems.push(t("Wolf braucht drei bis fünf Teilnehmer.","Wolf needs three to five players."));
 
@@ -2475,7 +2483,7 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
       handicap: {mode:handicapMode, percent:handicapPercent},
       formats,
       matchup: needsDuel ? effectiveMatchup : [],
-      wolfChoices: Array.from({length:holeCount},()=>({partnerId:null, blind:false})),
+      wolfChoices: Array.from({length:holeCount},()=>({partnerId:null, blind:false, lone:false})),
       bbbAwards: Array.from({length:holeCount},()=>({bingo:null, bango:null, bongo:null})),
       nassauPresses: [],
       stake: {
@@ -2746,6 +2754,12 @@ function PlayerChips({participants, value, onSelect, extra=null, accent=COLORS.h
   );
 }
 
+/**
+ * Die Ansage des Wolfs. Sie steht als erstes im Loch, denn sie kommt im Spiel
+ * auch zuerst: der Wolf sagt vor dem Loch, mit wem er spielt. Ohne Ansage gibt
+ * es keine Punkte, deshalb ist "noch nichts gewählt" ein eigener, sichtbarer
+ * Zustand und nicht stillschweigend ein Lone Wolf.
+ */
 function WolfControls({game, state, holeIndex, onChoice}) {
   const t = useT();
   const wolfHole = state.wolf?.holes[holeIndex];
@@ -2754,6 +2768,7 @@ function WolfControls({game, state, holeIndex, onChoice}) {
   const choice = game.wolfChoices[holeIndex] || {};
   const candidates = game.participants.filter(p=>p.playerId !== wolfHole.wolfId);
   const rotationOver = holeIndex >= (state.wolf?.rotationHoles ?? 0);
+  const open = !wolfHole.declared;
 
   const chip = (active, label, onClick, accent) => (
     <button type="button" onClick={onClick}
@@ -2763,19 +2778,26 @@ function WolfControls({game, state, holeIndex, onChoice}) {
   );
 
   return (
-    <div style={{...subtleCardStyle,padding:"12px 14px",marginBottom:12}}>
+    <div style={{...subtleCardStyle,padding:"12px 14px",marginBottom:12,
+      border:`1px solid ${open?"rgba(197,107,26,0.4)":"var(--color-border-secondary)"}`,
+      background:open?"linear-gradient(180deg, #FFF8EF 0%, #FFF2E2 100%)":undefined}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}>
         <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec}}>Wolf</span>
-        <span style={{fontSize:12.5,fontWeight:600}}>{wolfName}{rotationOver ? " (Punktletzter)" : ""}</span>
+        <span style={{fontSize:12.5,fontWeight:600}}>{wolfName}{rotationOver ? t(" (Punktletzter)"," (fewest points)") : ""}</span>
       </div>
+      {open && (
+        <div style={{fontSize:12.5,lineHeight:1.5,color:"#9a5314",marginBottom:8}}>
+          {t(`${wolfName} sagt an, bevor das Loch zählt: Partner, allein oder blind.`,`${wolfName} declares before the hole counts: a partner, alone, or blind.`)}
+        </div>
+      )}
       <PlayerChips
         participants={candidates}
-        value={choice.partnerId ?? null}
+        value={wolfHole.partnerId}
         accent="#7F77DD"
-        onSelect={partnerId=>onChoice(holeIndex, {partnerId, blind:false})}
+        onSelect={partnerId=>onChoice(holeIndex, {partnerId, blind:false, lone:false})}
         extra={<>
-          {chip(!choice.partnerId && !choice.blind, "Lone Wolf · 3", ()=>onChoice(holeIndex, {partnerId:null, blind:false}), "#C56B1A")}
-          {chip(!choice.partnerId && Boolean(choice.blind), "Blind Wolf · 4", ()=>onChoice(holeIndex, {partnerId:null, blind:true}), "#9a5314")}
+          {chip(wolfHole.lone && !wolfHole.blind, "Lone Wolf · 3", ()=>onChoice(holeIndex, {partnerId:null, blind:false, lone:true}), "#C56B1A")}
+          {chip(wolfHole.blind, "Blind Wolf · 4", ()=>onChoice(holeIndex, {partnerId:null, blind:true, lone:true}), "#9a5314")}
         </>}
       />
       {wolfHole.outcome && (
@@ -2837,14 +2859,24 @@ function NassauPressControls({game, state, holeIndex, onPress}) {
 
 function GameHoleEntry({game, state, onScore, onChoice, onAward, onPress, onFinish, onExit}) {
   const t = useT();
-  // Beim Öffnen auf das erste noch unvollständige Loch springen.
+  // Beim Öffnen auf das erste noch unvollständige Loch springen. Unvollständig
+  // ist es auch ohne Wolf-Ansage – sonst blieben genau die Löcher liegen, die
+  // später ohne Punkte dastehen.
   const [holeIndex, setHoleIndex] = useState(()=>{
     for (let index = 0; index < game.holeCount; index += 1) {
-      if (state.ids.some(id=>!Number.isFinite(game.scores[index]?.[id]))) return index;
+      const scoresMissing = state.ids.some(id=>!Number.isFinite(game.scores[index]?.[id]));
+      const wolfHoleAt = state.wolf?.holes[index];
+      if (scoresMissing || (wolfHoleAt?.wolfId && !wolfHoleAt.declared)) return index;
     }
     return game.holeCount - 1;
   });
   const hole = game.holes[holeIndex];
+  // Solange der Wolf nicht angesagt hat, ist das Loch nicht fertig – weiter
+  // geht es erst danach, sonst fehlen am Ende die Punkte.
+  const wolfHole = state.wolf?.holes[holeIndex];
+  const wolfPending = Boolean(wolfHole?.wolfId) && !wolfHole.declared;
+  const lastHole = holeIndex === game.holeCount-1;
+  const nextBlocked = wolfPending || lastHole;
 
   return (
     <div>
@@ -2856,9 +2888,12 @@ function GameHoleEntry({game, state, onScore, onChoice, onAward, onPress, onFini
             <div style={{fontSize:26,fontWeight:700,lineHeight:1}}>{t("Loch","Hole")} {hole.nr}</div>
             <div style={{fontSize:12,color:COLORS.textSec,marginTop:4}}>Par {hole.par} · SI {hole.si} · {holeIndex+1}/{game.holeCount}</div>
           </div>
-          <button type="button" onClick={()=>setHoleIndex(i=>Math.min(game.holeCount-1, i+1))} disabled={holeIndex === game.holeCount-1}
-            style={{...gamesGhostBtn,padding:"10px 16px",opacity:holeIndex === game.holeCount-1 ? 0.35 : 1}}>→</button>
+          <button type="button" onClick={()=>setHoleIndex(i=>Math.min(game.holeCount-1, i+1))} disabled={nextBlocked}
+            title={wolfPending ? t("Erst die Wolf-Ansage","The wolf declares first") : undefined}
+            style={{...gamesGhostBtn,padding:"10px 16px",opacity:nextBlocked ? 0.35 : 1,cursor:nextBlocked?"not-allowed":"pointer"}}>→</button>
         </div>
+
+        {state.wolf && <WolfControls game={game} state={state} holeIndex={holeIndex} onChoice={onChoice}/>}
 
         {game.participants.map(participant=>{
           const allocation = state.allocationById.get(participant.playerId);
@@ -2880,11 +2915,17 @@ function GameHoleEntry({game, state, onScore, onChoice, onAward, onPress, onFini
         })}
       </div>
 
-      {state.wolf && <WolfControls game={game} state={state} holeIndex={holeIndex} onChoice={onChoice}/>}
       {state.bbb && <BbbControls game={game} state={state} holeIndex={holeIndex} onAward={onAward}/>}
       {state.nassau && <NassauPressControls game={game} state={state} holeIndex={holeIndex} onPress={onPress}/>}
 
       <GameStandings game={game} state={state} compact/>
+
+      {state.wolf?.undeclared.length > 0 && (
+        <div style={{marginTop:12,padding:"10px 14px",borderRadius:"var(--border-radius-md)",background:"#FDF1E6",color:"#9a5314",fontSize:12.5,lineHeight:1.5}}>
+          {t(`Ohne Wolf-Ansage und damit ohne Punkte: Loch ${state.wolf.undeclared.map(index=>game.holes[index].nr).join(", ")}.`,
+             `No wolf declared, so no points: hole ${state.wolf.undeclared.map(index=>game.holes[index].nr).join(", ")}.`)}
+        </div>
+      )}
 
       <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
         <button onClick={onFinish} style={gamesPrimaryBtn}>{t("Spiel beenden","Finish game")}</button>
@@ -4880,7 +4921,7 @@ function AppBody() {
         handicap: card.handicap,
         formats: card.formats,
         matchup: card.matchup.map(index=>participants[index]?.playerId).filter(Boolean),
-        wolfChoices: Array.from({length: card.holeCount}, ()=>({partnerId:null, blind:false})),
+        wolfChoices: Array.from({length: card.holeCount}, ()=>({partnerId:null, blind:false, lone:false})),
         bbbAwards: Array.from({length: card.holeCount}, ()=>({bingo:null, bango:null, bongo:null})),
         nassauPresses: [],
         stake: card.stake,
