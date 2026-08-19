@@ -501,15 +501,23 @@ export function scoreNassau(
 // ---------------------------------------------------------------------------
 
 export type WolfChoice = {
-  /** Gewählter Partner, oder null/undefined für Lone Wolf. */
+  /** Gewählter Partner, oder null für allein. */
   partnerId?: string | null;
   /** Blind Wolf ("Pig"): schon vor dem ersten Abschlag allein angesagt. */
   blind?: boolean;
+  /** Allein angesagt. Ohne Partner und ohne dieses Zeichen ist nichts gewählt. */
+  lone?: boolean;
 };
 
 export type WolfHole = {
   holeIndex: number;
   wolfId: string | null;
+  /**
+   * Hat der Wolf sich erklärt? Ohne Ansage gibt es keine Punkte: sonst wäre
+   * jedes vergessene Loch ein Lone Wolf, und den zahlt keiner gern aus
+   * Versehen.
+   */
+  declared: boolean;
   partnerId: string | null;
   lone: boolean;
   blind: boolean;
@@ -526,6 +534,8 @@ export type WolfResult = {
   totals: Record<string, number>;
   /** Löcher, auf denen nicht mehr rotiert, sondern nach Punktstand bestimmt wird. */
   rotationHoles: number;
+  /** Gespielte Löcher ohne Ansage des Wolfs – dort fehlen die Punkte. */
+  undeclared: number[];
 };
 
 /**
@@ -538,6 +548,11 @@ export type WolfResult = {
  *   Lone Wolf gewinnt       -> 3   (Blind Wolf: 4)
  *   Lone Wolf verliert      -> jeder andere je 1   (Blind Wolf: je 2)
  *   Geteiltes Loch          -> keine Punkte
+ *   Ohne Ansage             -> keine Punkte, das Loch bleibt offen
+ *
+ * Die Ansage ist Pflicht: der Wolf sagt vor dem Loch, mit wem er spielt. Ein
+ * Loch ohne Ansage wird deshalb nicht gewertet, statt stillschweigend als Lone
+ * Wolf durchzugehen – 3 Punkte, die niemand angesagt hat, wären teuer.
  *
  * Die Rotation geht nur so lange auf, wie die Lochzahl durch die Spielerzahl
  * teilbar ist. Für die Restlöcher (bei vier Spielern also 17 und 18) ist der
@@ -558,11 +573,12 @@ export function scoreWolf(
 
   const rotationHoles = playerCount > 0 ? Math.floor(holeCount / playerCount) * playerCount : 0;
   const result: WolfHole[] = [];
+  const undeclared: number[] = [];
 
   for (let index = 0; index < holeCount; index += 1) {
     if (playerCount < 3) {
       result.push({
-        holeIndex: index, wolfId: null, partnerId: null, lone: false, blind: false,
+        holeIndex: index, wolfId: null, declared: false, partnerId: null, lone: false, blind: false,
         wolfTeam: [], opponents: [], wolfBest: null, opponentBest: null, outcome: null, points: {},
       });
       continue;
@@ -578,11 +594,14 @@ export function scoreWolf(
     const partnerId = choice.partnerId && choice.partnerId !== wolfId && playerIds.includes(choice.partnerId)
       ? choice.partnerId
       : null;
-    const lone = partnerId === null;
+    // Allein gilt nur als angesagt, wenn es angesagt wurde. Ein leerer Eintrag
+    // ist ein offenes Loch, kein Lone Wolf.
+    const declared = partnerId !== null || Boolean(choice.lone) || Boolean(choice.blind);
+    const lone = declared && partnerId === null;
     const blind = lone && Boolean(choice.blind);
 
-    const wolfTeam = lone ? [wolfId] : [wolfId, partnerId as string];
-    const opponents = playerIds.filter(id=>!wolfTeam.includes(id));
+    const wolfTeam = declared ? (lone ? [wolfId] : [wolfId, partnerId as string]) : [];
+    const opponents = declared ? playerIds.filter(id=>!wolfTeam.includes(id)) : [];
 
     const bestNet = (ids: string[]) => {
       const nets = ids.map(id=>netAt(scores, index, byId.get(id))).filter((net): net is number => net !== null);
@@ -590,6 +609,11 @@ export function scoreWolf(
     };
     const wolfBest = bestNet(wolfTeam);
     const opponentBest = bestNet(opponents);
+
+    // Ein Loch, das schon gespielt ist, aber ohne Ansage blieb, faellt auf.
+    if (!declared && playerIds.every(id=>netAt(scores, index, byId.get(id)) !== null)) {
+      undeclared.push(index);
+    }
 
     let outcome: WolfHole["outcome"] = null;
     const points: Record<string, number> = {};
@@ -608,10 +632,10 @@ export function scoreWolf(
       for (const [id, value] of Object.entries(points)) totals[id] += value;
     }
 
-    result.push({ holeIndex: index, wolfId, partnerId, lone, blind, wolfTeam, opponents, wolfBest, opponentBest, outcome, points });
+    result.push({ holeIndex: index, wolfId, declared, partnerId, lone, blind, wolfTeam, opponents, wolfBest, opponentBest, outcome, points });
   }
 
-  return { holes: result, totals, rotationHoles };
+  return { holes: result, totals, rotationHoles, undeclared };
 }
 
 // ---------------------------------------------------------------------------

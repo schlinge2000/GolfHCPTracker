@@ -433,7 +433,7 @@ describe("scoreWolf", () => {
   it("bestimmt auf den Restlöchern den Punktletzten als Wolf", () => {
     // a gewinnt Loch 1 als Lone Wolf, alle anderen Löcher werden geteilt.
     const scores: HoleScores[] = HOLES_18.map((_, index) => (index === 0 ? { a: 3, b: 4, c: 4, d: 4 } : { a: 4, b: 4, c: 4, d: 4 }));
-    const result = scoreWolf(ids, scores, allocations, HOLES_18, [{ partnerId: null }]);
+    const result = scoreWolf(ids, scores, allocations, HOLES_18, [{ partnerId: null, lone: true }]);
     expect(result.rotationHoles).toBe(16);
     // a hat 3 Punkte, b/c/d je 0 -> b ist als erster Punktletzter dran.
     expect(result.holes[16].wolfId).toBe("b");
@@ -455,13 +455,13 @@ describe("scoreWolf", () => {
 
   it("gibt dem siegreichen Lone Wolf drei Punkte", () => {
     const scores: HoleScores[] = [{ a: 3, b: 4, c: 4, d: 4 }];
-    const result = scoreWolf(ids, scores, allocations, HOLES_18, [{ partnerId: null }]);
+    const result = scoreWolf(ids, scores, allocations, HOLES_18, [{ partnerId: null, lone: true }]);
     expect(result.totals).toMatchObject({ a: 3, b: 0, c: 0, d: 0 });
   });
 
   it("gibt beim verlorenen Lone Wolf jedem anderen einen Punkt", () => {
     const scores: HoleScores[] = [{ a: 5, b: 4, c: 6, d: 6 }];
-    const result = scoreWolf(ids, scores, allocations, HOLES_18, [{ partnerId: null }]);
+    const result = scoreWolf(ids, scores, allocations, HOLES_18, [{ partnerId: null, lone: true }]);
     expect(result.totals).toMatchObject({ a: 0, b: 1, c: 1, d: 1 });
   });
 
@@ -479,15 +479,48 @@ describe("scoreWolf", () => {
   });
 
   it("wertet ein Loch erst, wenn alle Beteiligten erfasst sind", () => {
-    const result = scoreWolf(ids, [{ a: 3, b: 4, c: 4 }], allocations, HOLES_18, [{ partnerId: null }]);
+    const result = scoreWolf(ids, [{ a: 3, b: 4, c: 4 }], allocations, HOLES_18, [{ partnerId: null, lone: true }]);
     expect(result.holes[0].outcome).toBeNull();
     expect(result.totals.a).toBe(0);
   });
 
   it("ignoriert den Wolf als eigenen Partner", () => {
-    const result = scoreWolf(ids, [{ a: 3, b: 4, c: 4, d: 4 }], allocations, HOLES_18, [{ partnerId: "a" }]);
+    const result = scoreWolf(ids, [{ a: 3, b: 4, c: 4, d: 4 }], allocations, HOLES_18, [{ partnerId: "a", lone: true }]);
+    expect(result.holes[0].partnerId).toBeNull();
     expect(result.holes[0].lone).toBe(true);
     expect(result.totals.a).toBe(3);
+  });
+
+  it("wertet ein Loch ohne Ansage nicht", () => {
+    // Ein leerer Eintrag ist ein offenes Loch, kein Lone Wolf: sonst gaebe es
+    // hier 3 Punkte fuer a, die niemand angesagt hat.
+    const result = scoreWolf(ids, [{ a: 3, b: 4, c: 4, d: 4 }], allocations, HOLES_18, [{ partnerId: null }]);
+    expect(result.holes[0].declared).toBe(false);
+    expect(result.holes[0].outcome).toBeNull();
+    expect(result.holes[0].points).toEqual({});
+    expect(result.totals).toMatchObject({ a: 0, b: 0, c: 0, d: 0 });
+    expect(result.undeclared).toEqual([0]);
+  });
+
+  it("wertet auch einen ungueltigen Partner nicht als Lone Wolf", () => {
+    // Der Wolf kann sich nicht selbst waehlen; ohne weitere Ansage bleibt das
+    // Loch offen.
+    const result = scoreWolf(ids, [{ a: 3, b: 4, c: 4, d: 4 }], allocations, HOLES_18, [{ partnerId: "a" }]);
+    expect(result.holes[0].declared).toBe(false);
+    expect(result.totals.a).toBe(0);
+  });
+
+  it("nennt nur gespielte Loecher ohne Ansage", () => {
+    // Loch 1 ist fertig gespielt, Loch 2 erst angefangen: nur Loch 1 fehlt.
+    const result = scoreWolf(ids, [{ a: 4, b: 4, c: 4, d: 4 }, { a: 4, b: 4 }], allocations, HOLES_18, []);
+    expect(result.undeclared).toEqual([0]);
+  });
+
+  it("zaehlt eine Ansage als Ansage, auch wenn noch keine Scores stehen", () => {
+    const result = scoreWolf(ids, [], allocations, HOLES_18, [{ partnerId: "b" }]);
+    expect(result.holes[0].declared).toBe(true);
+    expect(result.holes[0].outcome).toBeNull();
+    expect(result.undeclared).toEqual([]);
   });
 
   it("entscheidet netto über den besseren Ball des Teams", () => {
@@ -506,7 +539,7 @@ describe("scoreWolf", () => {
   it("funktioniert auch mit drei und fünf Spielern", () => {
     const three = ["a", "b", "c"];
     const threeAlloc = buildAllocations(three.map(id => ({ id, courseHandicap: 10 })), HOLES_18, { mode: "difference", percent: 100 });
-    const threeResult = scoreWolf(three, [{ a: 3, b: 4, c: 4 }], threeAlloc, HOLES_18, [{ partnerId: null }]);
+    const threeResult = scoreWolf(three, [{ a: 3, b: 4, c: 4 }], threeAlloc, HOLES_18, [{ partnerId: null, lone: true }]);
     expect(threeResult.rotationHoles).toBe(18);
     expect(threeResult.totals.a).toBe(3);
 
@@ -520,7 +553,7 @@ describe("scoreWolf", () => {
   it("bleibt bei unter drei Spielern wirkungslos", () => {
     const two = ["a", "b"];
     const twoAlloc = buildAllocations(two.map(id => ({ id, courseHandicap: 10 })), HOLES_18, { mode: "difference", percent: 100 });
-    const result = scoreWolf(two, [{ a: 3, b: 5 }], twoAlloc, HOLES_18, [{ partnerId: null }]);
+    const result = scoreWolf(two, [{ a: 3, b: 5 }], twoAlloc, HOLES_18, [{ partnerId: null, lone: true }]);
     expect(result.holes[0].wolfId).toBeNull();
     expect(result.totals).toEqual({ a: 0, b: 0 });
   });
