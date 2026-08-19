@@ -53,3 +53,58 @@ export const KAMBACH_SCORECARD_LINES = [
   "1-18 73 - - 0 0 0",
   "PC CADDIE://online GmbH & Co. KG - Impressum",
 ];
+
+// Zweite Kartenart: eine mit www.scorecard4you.de erzeugte Karte (Golfclub
+// Düren, 18 Loch). HCPI, Course-HCP und Datum sind ersetzt, die Karte selbst
+// steht unveraendert. Sie ist anders gebaut als die PC-CADDIE-Karte:
+//   - jede Zeile steht doppelt, weil die Karte zwei Spieler nebeneinander druckt
+//   - die Spaltenfolge ist "Loch Herren Damen Hcp. Par", der Stroke Index
+//     steht also vor dem Par, und davor stehen zwei Laengen-Spalten
+//   - Course Rating und Slope stehen in eigenen Zeilen, je Spalte ein Wert,
+//     mit deutschem Dezimalkomma und ohne Abschlagsfarbe
+//   - "1-9", "10-18" und "1-18" fassen zusammen, das Par steht dort hinten
+//   - der Platzname steht nur neben der Beschriftung "Spieler:"
+export const DUEREN_SCORECARD_LINES = [
+  "Spieler: Golfclub Düren e.V. Spieler: Golfclub Düren e.V.",
+  "Earn HCPI: 26,0 / Course-HCP: 30 Earn HCPI: 26,0 / Course-HCP: 30",
+  "Montag, 01.01.2026 Montag, 01.01.2026",
+  "Loch Herren Damen Hcp. Par Earn Loch Herren Damen Hcp. Par Earn",
+  "1 363 319 7 4 1 363 319 7 4",
+  "// //",
+  "2 352 305 9 4 2 352 305 9 4",
+  "// //",
+  "3 275 256 11 4 3 275 256 11 4",
+  "// //",
+  "4 189 163 17 3 4 189 163 17 3",
+  "/ /",
+  "5 504 442 3 5 5 504 442 3 5",
+  "// //",
+  "6 333 291 13 4 6 333 291 13 4",
+  "/ /",
+  "7 514 456 5 5 // 7 514 456 5 5 //",
+  "8 420 345 1 4 // 8 420 345 1 4 //",
+  "9 281 251 15 4 / 9 281 251 15 4 /",
+  "1-9 3231 2828 9 37 1-9 3231 2828 9 37",
+  "10 332 296 12 4 10 332 296 12 4",
+  "/ /",
+  "11 504 420 8 5 11 504 420 8 5",
+  "// //",
+  "12 164 147 14 3 12 164 147 14 3",
+  "/ /",
+  "13 383 319 2 4 13 383 319 2 4",
+  "// //",
+  "14 109 98 18 3 14 109 98 18 3",
+  "/ /",
+  "15 399 374 10 5 15 399 374 10 5",
+  "// //",
+  "16 319 269 4 4 16 319 269 4 4",
+  "// //",
+  "17 152 133 16 3 / 17 152 133 16 3 /",
+  "18 489 432 6 5 // 18 489 432 6 5 //",
+  "10-18 2851 2488 9 36 10-18 2851 2488 9 36",
+  "1-18 6082 5316 18 73 1-18 6082 5316 18 73",
+  "Slope 132 131 Stableford Slope 132 131 Stableford",
+  "Punkte Punkte",
+  "CR 73,4 75,6 CR 73,4 75,6",
+  "Alle Entfernungsangaben in Meter Erstellt mit www.scorecard4you.de Alle Entfernungsangaben in Meter Erstellt mit www.scorecard4you.de",
+];
