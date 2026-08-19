@@ -3,3 +3,10 @@ dist
 dev-dist
 .DS_Store
 .npmrc
+
+# Persoenliche Daten gehoeren nicht in ein oeffentliches Repo. Zum Entwickeln
+# liegen Scoring Records, Scorekarten und Datenexporte oft im Projektordner –
+# von hier aus sollen sie nicht versehentlich mitcommittet werden. Die Zahlen
+# daraus stehen anonymisiert in den Fixtures unter src/.
+/*.pdf
+/golf-hcp-export-*.json
