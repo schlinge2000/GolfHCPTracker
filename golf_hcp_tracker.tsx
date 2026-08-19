@@ -329,6 +329,20 @@ function mapGolfDeTee(value) {
   return value ? `${String(value).charAt(0).toUpperCase()}${String(value).slice(1)}` : "Gelb";
 }
 
+// Scorekarten von scorecard4you nennen ihre Abschlag-Spalten "Herren" und
+// "Damen" statt einer Farbe. In Deutschland sind das die gelben und die roten
+// Abschlaege – wir uebernehmen sie so, sagen es aber dazu, denn manche Clubs
+// vermessen ihre Herren von Weiss.
+const SCORECARD_TEE_GUESS = { herren: "Gelb", men: "Gelb", damen: "Rot", ladies: "Rot", women: "Rot" };
+
+function scorecardTee(name) {
+  const normalized = normalizeText(name);
+  if (!normalized) return null;
+  if (SCORECARD_TEE_GUESS[normalized]) return { tee: SCORECARD_TEE_GUESS[normalized], guessed: true };
+  const mapped = mapGolfDeTee(name);
+  return TEES.includes(mapped) ? { tee: mapped, guessed: false } : null;
+}
+
 function average(values) {
   if (!values.length) return null;
   return values.reduce((sum, value)=>sum + value, 0) / values.length;
@@ -1616,6 +1630,9 @@ function CourseForm({initial, rounds, startHcp, onSave, onCancel}) {
   const [pdfStatus, setPdfStatus] = useState({ tone:"", message:"" });
   // Merkt sich, ob die Tabelle aus der Karte kommt: dann ist sie kein Vorschlag mehr.
   const [holesFromCard, setHolesFromCard] = useState(false);
+  // Karten mit Herren- und Damen-Spalte bringen zwei Ratings mit. Beide bleiben
+  // stehen, damit man umschalten kann, statt Zahlen abzutippen.
+  const [cardTees, setCardTees] = useState([]);
   const warningText = warning => ({
     "holes-incomplete": t("Es fehlen Löcher – bitte die Tabelle unten prüfen.","Holes are missing – please check the table below."),
     "si-not-unique": t("Die Stroke Indizes sind nicht eindeutig – bitte prüfen.","The stroke indexes are not unique – please check."),
@@ -1623,21 +1640,34 @@ function CourseForm({initial, rounds, startHcp, onSave, onCancel}) {
     "rating-missing": t("Course Rating und Slope standen nicht auf der Karte.","Course rating and slope were not on the card."),
   })[warning] ?? warning;
 
+  // Ein Abschlag von der Karte: Name, Course Rating und Slope in einem Zug.
+  const applyCardTee = entry => setC(prev=>{
+    const choice = scorecardTee(entry.name);
+    return {
+      ...prev,
+      tee: choice ? choice.tee : prev.tee,
+      courseRating: entry.courseRating ?? prev.courseRating,
+      slopeRating: entry.slopeRating ?? prev.slopeRating,
+    };
+  });
+
   const importScorecard = async event => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
     setPdfStatus({ tone:"", message:t("Karte wird gelesen …","Reading the card …") });
+    setCardTees([]);
     try {
       const parsed = parseScorecardPdfLines(await extractPdfLinesByPosition(file));
       if (!isUsableScorecard(parsed)) {
         setPdfStatus({ tone:"error", message:t("In diesem PDF steht keine lesbare Lochtabelle. Gescannte Karten sind reine Bilder – dann die Löcher unten von Hand eintragen.","This PDF has no readable hole table. Scanned cards are images only – enter the holes by hand below.") });
         return;
       }
+      const choice = scorecardTee(parsed.tee);
       setC(prev=>({
         ...prev,
         name: prev.name || parsed.courseName || "",
-        tee: parsed.tee ? mapGolfDeTee(parsed.tee) : prev.tee,
+        tee: choice ? choice.tee : prev.tee,
         courseRating: parsed.courseRating ?? prev.courseRating,
         slopeRating: parsed.slopeRating ?? prev.slopeRating,
         par: parsed.par ?? prev.par,
@@ -1646,9 +1676,20 @@ function CourseForm({initial, rounds, startHcp, onSave, onCancel}) {
       }));
       setShowHoles(true);
       setHolesFromCard(true);
+      setCardTees(parsed.tees.filter(entry=>entry.name));
       const summary = t(`${parsed.holes.length} Löcher übernommen · Par ${parsed.par}`,`${parsed.holes.length} holes taken over · par ${parsed.par}`);
       const notes = parsed.warnings.map(warningText);
-      setPdfStatus({ tone:notes.length ? "error" : "success", message:[summary, ...notes].join(" · ") });
+      // Steht auf der Karte keine Farbe, sondern "Herren"/"Damen", ist der
+      // Abschlag geraten – das gehoert dazugesagt, ist aber kein Fehler.
+      const hints = [];
+      if (choice?.guessed) {
+        const teeLabel = t(TEE_LABELS[choice.tee] ?? choice.tee);
+        hints.push(t(`Spalte „${parsed.tee}“ als Abschlag ${teeLabel} übernommen – bitte prüfen.`,
+                     `Column “${parsed.tee}” taken as the ${teeLabel.toLowerCase()} tee – please check.`));
+      } else if (parsed.tee && !choice) {
+        hints.push(t(`Abschlag „${parsed.tee}“ ist keine der vier Farben – bitte selbst wählen.`,`Tee “${parsed.tee}” is none of the four colours – please pick one yourself.`));
+      }
+      setPdfStatus({ tone:notes.length ? "error" : "success", message:[summary, ...notes, ...hints].join(" · ") });
     } catch(error) {
       setPdfStatus({ tone:"error", message:t("Das PDF konnte nicht gelesen werden.","That PDF could not be read.") });
     }
@@ -1659,8 +1700,8 @@ function CourseForm({initial, rounds, startHcp, onSave, onCancel}) {
       <div style={{...subtleCardStyle,padding:"14px 16px",marginBottom:16,border:"1px solid rgba(12,68,124,0.2)",background:"linear-gradient(180deg, rgba(240,246,255,0.96) 0%, rgba(255,255,255,0.96) 100%)"}}>
         <div style={{fontSize:14,fontWeight:650,marginBottom:4}}>{t("Scorekarte als PDF","Scorecard as a PDF")}</div>
         <div style={{fontSize:13,lineHeight:1.55,color:"var(--color-text-secondary)",marginBottom:12}}>
-          {t("Die Online-Scorekarte deines Clubs bringt Par und Stroke Index für jedes Loch mit – genau das, was im golf.de-Import fehlt. Platzname, Abschlag, Course Rating und Slope kommen mit.",
-             "Your club's online scorecard carries par and stroke index for every hole – exactly what the golf.de import lacks. Course name, tee, course rating and slope come along.")}
+          {t("Die Online-Scorekarte deines Clubs bringt Par und Stroke Index für jedes Loch mit – genau das, was im golf.de-Import fehlt. Platzname, Abschlag, Course Rating und Slope kommen mit. Karten von PC CADDIE und von scorecard4you sind erprobt.",
+             "Your club's online scorecard carries par and stroke index for every hole – exactly what the golf.de import lacks. Course name, tee, course rating and slope come along. Cards from PC CADDIE and from scorecard4you are proven to work.")}
         </div>
         <label style={{display:"inline-block",padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"#0C447C",border:"1px solid #0C447C",cursor:"pointer",fontWeight:600,fontSize:14,color:"#fff"}}>
           {t("PDF wählen","Choose a PDF")}
@@ -1669,6 +1710,28 @@ function CourseForm({initial, rounds, startHcp, onSave, onCancel}) {
         {pdfStatus.message && (
           <div style={{marginTop:10,fontSize:13,lineHeight:1.5,color:pdfStatus.tone==="error"?"#E24B4A":pdfStatus.tone==="success"?"#1D9E75":"var(--color-text-secondary)",fontWeight:pdfStatus.tone==="success"?500:400}}>
             {pdfStatus.message}
+          </div>
+        )}
+        {cardTees.length > 1 && (
+          <div style={{marginTop:10}}>
+            <div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:6}}>
+              {t("Die Karte führt mehrere Abschläge – welchen spielst du?","The card lists several tees – which one do you play?")}
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              {cardTees.map(entry=>{
+                const active = entry.courseRating === c.courseRating && entry.slopeRating === c.slopeRating;
+                return (
+                  <button key={entry.name} type="button" onClick={()=>applyCardTee(entry)}
+                    style={{padding:"7px 12px",borderRadius:"var(--border-radius-md)",cursor:"pointer",fontSize:12,fontWeight:600,
+                      border:`1px solid ${active?"#0C447C":"var(--color-border-secondary)"}`,
+                      background:active?"#0C447C":"rgba(255,255,255,0.92)",
+                      color:active?"#fff":"var(--color-text-primary)"}}>
+                    {entry.name}
+                    <span style={{fontWeight:400,opacity:0.8}}>{` ${entry.courseRating ?? "–"} / ${entry.slopeRating ?? "–"}`}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
