@@ -2021,9 +2021,10 @@ function QrScanDialog({title, hint, onDetect, onClose, accepts}) {
   );
 }
 
-function CourseList({courses, onNew, onEdit}) {
+function CourseList({courses, usage=new Map(), onNew, onEdit, onDelete}) {
   const t = useT();
   const [shared, setShared] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
   const sharedCard = useMemo(()=>{
     if (!shared) return null;
     return {
@@ -2054,9 +2055,35 @@ function CourseList({courses, onNew, onEdit}) {
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>setShared(c)} style={{padding:"4px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-tertiary)",background:"transparent",cursor:"pointer",fontSize:12,color:"var(--color-text-primary)"}}>{t("Teilen","Share")}</button>
             <button onClick={()=>onEdit(c)} style={{padding:"4px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-tertiary)",background:"transparent",cursor:"pointer",fontSize:12,color:"var(--color-text-primary)"}}>{t("Bearbeiten","Edit")}</button>
+            <button onClick={()=>setPendingDelete(c)} style={{padding:"4px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid #E24B4A",background:"transparent",cursor:"pointer",fontSize:12,color:"#E24B4A"}}>{t("Löschen","Delete")}</button>
           </div>
         </div>
       ))}
+
+      {pendingDelete && (()=>{
+        const used = usage.get(pendingDelete.id) ?? { rounds:0, games:0 };
+        return (
+          <Modal title={t("Platz löschen?","Delete course?")} onClose={()=>setPendingDelete(null)}>
+            <div style={{fontSize:15,fontWeight:600,marginBottom:8}}>{pendingDelete.name}</div>
+            <p style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)",marginTop:0}}>
+              {used.rounds || used.games
+                ? t(`Der Platz steckt in ${used.rounds} Runde${used.rounds===1?"":"n"} und ${used.games} Spiel${used.games===1?"":"en"}. Die bleiben vollständig erhalten: sie tragen Name, Course Rating, Slope und Par selbst, Spiele zusätzlich ihre Lochtabelle. Nur der Eintrag in dieser Liste verschwindet – für neue Runden musst du den Platz dann wieder anlegen.`,
+                    `This course is used by ${used.rounds} round${used.rounds===1?"":"s"} and ${used.games} game${used.games===1?"":"s"}. Those stay intact: they carry name, course rating, slope and par themselves, games also their hole table. Only the entry in this list goes – for new rounds you would have to add the course again.`)
+                : t("Der Platz steckt in keiner Runde und in keinem Spiel.","This course is not used by any round or game.")}
+            </p>
+            <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
+              <button onClick={()=>{ onDelete(pendingDelete.id); setPendingDelete(null); }}
+                style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"#E24B4A",color:"#fff",border:"none",cursor:"pointer",fontFamily:"var(--font-sans)",fontWeight:600,fontSize:14}}>
+                {t("Löschen","Delete")}
+              </button>
+              <button onClick={()=>setPendingDelete(null)}
+                style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:`0.5px solid ${COLORS.border}`,color:"var(--color-text-primary)",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14}}>
+                {t("Abbrechen","Cancel")}
+              </button>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {sharedCard && (
         <Modal title={t("Platzkarte teilen","Share course card")} onClose={()=>setShared(null)} maxWidth={620}>
@@ -4936,6 +4963,7 @@ function AppBody() {
     setCourseForm(null);
   };
   const saveProfile = p => updateDB(db=>{ db.profile=p; return db; });
+  const deleteCourse = id => updateDB(db=>{ db.courses=db.courses.filter(course=>course.id!==id); return db; });
   const deleteRound = id => { updateDB(db=>{ db.rounds=db.rounds.filter(r=>r.id!==id); return db; }); setDeleteConfirm(null); };
   const clearSimulations = () => updateDB(db=>{ db.rounds=db.rounds.filter(r=>!r.simulated); return db; });
 
@@ -5043,6 +5071,22 @@ function AppBody() {
     const index = hcpTimeline.findIndex(entry=>simulatedRoundIds.has(entry.round.id));
     return index<0 ? null : index;
   },[hcpTimeline, simulatedRoundIds]);
+  // Wie oft ein Platz hinterlegt ist – nur fuer den Hinweis vor dem Loeschen.
+  // Runden und Spiele haengen nicht daran: sie tragen ihre Platzdaten selbst.
+  const courseUsage = useMemo(()=>{
+    const map = new Map();
+    const bump = (rawId, key) => {
+      const id = parseInt(rawId);
+      if (!Number.isFinite(id)) return;
+      const entry = map.get(id) ?? { rounds:0, games:0 };
+      entry[key] += 1;
+      map.set(id, entry);
+    };
+    db.rounds.forEach(round=>bump(round.courseId, "rounds"));
+    db.games.forEach(game=>bump(game.courseId, "games"));
+    return map;
+  },[db.rounds, db.games]);
+
   const nextSimulationDate = useMemo(()=>getNextDate(getLatestRoundDate(db.rounds)),[db.rounds]);
 
   const countingIds = useMemo(()=>{
@@ -5254,7 +5298,7 @@ function AppBody() {
             onCreateHcpRound={createHcpRoundFromGame}
           />}
           {view==="rounds" && <RoundList rounds={sortedRounds} courses={db.courses} onNew={newRound} onEdit={r=>setForm({...r})} onDelete={id=>setDeleteConfirm(id)} countingIds={countingIds} diffByRoundId={diffByRoundId}/>}
-          {view==="courses" && <CourseList courses={db.courses} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:"",nineHolePhcpFactor:0.5})} onEdit={c=>setCourseForm({...c})}/>}
+          {view==="courses" && <CourseList courses={db.courses} usage={courseUsage} onNew={()=>setCourseForm({name:"",courseRating:"",slopeRating:"",par:36,tee:"Gelb",notes:"",nineHolePhcpFactor:0.5})} onEdit={c=>setCourseForm({...c})} onDelete={deleteCourse}/>}
           {view==="profile" && <>
             <ProfileForm profile={db.profile} onSave={saveProfile}/>
             <div style={{...cardStyle,padding:"20px 24px",marginTop:14}}>
