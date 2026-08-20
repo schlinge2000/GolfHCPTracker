@@ -2652,7 +2652,7 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
           <button type="button" onClick={addPlayer} style={{...gamesGhostBtn,padding:"10px 14px"}}>+</button>
           <button type="button" onClick={()=>setScanning(true)} style={{...gamesGhostBtn,padding:"10px 14px",gridColumn:"1 / -1"}}>{t("Spielerkarte scannen","Scan a player card")}</button>
         </div>
-      </div>, t("Mitspieler bleiben für die nächsten Spiele gespeichert","Players stay saved for your next games"))}
+      </div>, t("Mitspieler bleiben für die nächsten Spiele gespeichert – löschen kannst du sie in der Games-Übersicht","Players stay saved for your next games – you can delete them in the games overview"))}
 
       {scanning && (
         <QrScanDialog
@@ -3226,6 +3226,77 @@ function GameRow({game, onOpen, onDelete}) {
 }
 
 /** Bilanz aus allen beendeten Matchplay-Spielen, je Gegner. */
+/**
+ * Die gespeicherten Mitspieler, damit man sie auch wieder loswird. Gelöscht
+ * wird nur der Eintrag in dieser Liste: gespielte Spiele tragen Name, Index und
+ * Course Handicap ihrer Teilnehmer selbst und bleiben vollständig. Der eigene
+ * Eintrag steht nicht zur Wahl – an ihm hängt die Zuordnung „du" in den Spielen.
+ */
+function SavedPlayers({players, usage=new Map(), onDelete}) {
+  const t = useT();
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const guests = players.filter(player=>!player.isMe);
+  if (!players.length) return null;
+
+  return (
+    <div style={{marginTop:20}}>
+      <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec,marginBottom:8}}>{t("Mitspieler","Players")}</div>
+      <div style={{...subtleCardStyle,padding:"14px 16px"}}>
+        <div style={{fontSize:13,color:COLORS.textSec,lineHeight:1.55,marginBottom:guests.length?12:0}}>
+          {guests.length
+            ? t("Einmal angelegt, bleiben sie für die nächsten Spiele gespeichert. Wer nicht mehr mitspielt, kann hier raus.",
+                "Once added they stay saved for your next games. Whoever no longer plays along can go here.")
+            : t("Noch keine Mitspieler gespeichert. Sie entstehen beim Anlegen eines Spiels oder beim Scannen einer Spielerkarte.",
+                "No players saved yet. They appear when you set up a game or scan a player card.")}
+        </div>
+        {guests.map(player=>(
+          <div key={player.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"9px 0",borderTop:"1px solid var(--color-border-tertiary)"}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:14,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{player.name}</div>
+              <div style={{fontSize:12,color:COLORS.textSec}}>
+                {t("Index","Index")} {player.hcpIndex}
+                {(usage.get(player.id) ?? 0) > 0 && ` · ${t(`${usage.get(player.id)} Spiel${usage.get(player.id)===1?"":"e"}`,`${usage.get(player.id)} game${usage.get(player.id)===1?"":"s"}`)}`}
+              </div>
+            </div>
+            <button type="button" onClick={()=>setPendingDelete(player)}
+              style={{padding:"4px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid #E24B4A",background:"transparent",cursor:"pointer",fontSize:12,color:"#E24B4A",flexShrink:0}}>
+              {t("Löschen","Delete")}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {pendingDelete && (()=>{
+        const games = usage.get(pendingDelete.id) ?? 0;
+        return (
+          <Modal title={t("Mitspieler löschen?","Delete player?")} onClose={()=>setPendingDelete(null)}>
+            <div style={{fontSize:15,fontWeight:600,marginBottom:8}}>{pendingDelete.name}</div>
+            <p style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)",marginTop:0}}>
+              {games
+                ? games === 1
+                  ? t(`${pendingDelete.name} steht in einem Spiel. Das bleibt vollständig erhalten – es trägt Name, Index und Course Handicap seiner Teilnehmer selbst, auch die Bilanz im Head-to-Head. Nur die Auswahl für neue Spiele verschwindet.`,
+                      `${pendingDelete.name} appears in one game. It stays intact – it carries each player's name, index and course handicap itself, head-to-head records included. Only the choice for new games goes away.`)
+                  : t(`${pendingDelete.name} steht in ${games} Spielen. Die bleiben vollständig erhalten – sie tragen Name, Index und Course Handicap ihrer Teilnehmer selbst, auch die Bilanz im Head-to-Head. Nur die Auswahl für neue Spiele verschwindet.`,
+                      `${pendingDelete.name} appears in ${games} games. Those stay intact – they carry each player's name, index and course handicap themselves, head-to-head records included. Only the choice for new games goes away.`)
+                : t(`${pendingDelete.name} hat noch in keinem Spiel mitgespielt.`,`${pendingDelete.name} has not played in any game yet.`)}
+            </p>
+            <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
+              <button onClick={()=>{ onDelete(pendingDelete.id); setPendingDelete(null); }}
+                style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"#E24B4A",color:"#fff",border:"none",cursor:"pointer",fontFamily:"var(--font-sans)",fontWeight:600,fontSize:14}}>
+                {t("Löschen","Delete")}
+              </button>
+              <button onClick={()=>setPendingDelete(null)}
+                style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:`0.5px solid ${COLORS.border}`,color:"var(--color-text-primary)",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14}}>
+                {t("Abbrechen","Cancel")}
+              </button>
+            </div>
+          </Modal>
+        );
+      })()}
+    </div>
+  );
+}
+
 function HeadToHead({games, mePlayerId}) {
   const t = useT();
   const records = useMemo(()=>{
@@ -3285,7 +3356,7 @@ function GamePlayView({game, onScore, onChoice, onAward, onPress, onFinish, onRe
   return <GameHoleEntry game={game} state={state} onScore={onScore} onChoice={onChoice} onAward={onAward} onPress={onPress} onFinish={onFinish} onExit={onExit}/>;
 }
 
-function GamesView({games, courses, players, profile, displayHcp, onStartGame, onAddPlayer, onUpdatePlayer, onUpsertCourse, onScore, onWolfChoice, onBbbAward, onNassauPress, onFinishGame, onReopenGame, onDeleteGame, onCreateHcpRound}) {
+function GamesView({games, courses, players, playerUsage, profile, displayHcp, onStartGame, onAddPlayer, onUpdatePlayer, onDeletePlayer, onUpsertCourse, onScore, onWolfChoice, onBbbAward, onNassauPress, onFinishGame, onReopenGame, onDeleteGame, onCreateHcpRound}) {
   const t = useT();
   const [screen, setScreen] = useState<{mode:"list"|"setup"|"play"; gameId?:number}>({mode:"list"});
   const [sharedGame, setSharedGame] = useState(null);
@@ -3411,6 +3482,8 @@ function GamesView({games, courses, players, profile, displayHcp, onStartGame, o
               <GameRow key={game.id} game={game} onOpen={()=>setScreen({mode:"play", gameId:game.id})} onDelete={()=>onDeleteGame(game.id)}/>
             ))}
       </div>
+
+      <SavedPlayers players={players} usage={playerUsage} onDelete={onDeletePlayer}/>
     </div>
   );
 }
@@ -5081,6 +5154,12 @@ function AppBody() {
     db.players = db.players.map(player=>player.id === id ? {...player, ...patch} : player);
     return db;
   });
+  // Nur der Eintrag in der Mitspieler-Liste. Gespielte Spiele haengen nicht
+  // daran: sie tragen Name, Index und Course Handicap ihrer Teilnehmer selbst.
+  const deletePlayer = id => updateDB(db=>{
+    db.players = db.players.filter(player=>player.id !== id || player.isMe);
+    return db;
+  });
 
   /** Legt einen gescannten Platz an oder aktualisiert ihn und gibt seine ID zurueck. */
   const upsertCourse = card => {
@@ -5190,6 +5269,19 @@ function AppBody() {
     db.games.forEach(game=>bump(game.courseId, "games"));
     return map;
   },[db.rounds, db.games]);
+  // In wie vielen Spielen ein Mitspieler steckt – nur fuer den Hinweis vor dem
+  // Loeschen; die Spiele selbst haengen nicht an der Liste.
+  const playerUsage = useMemo(()=>{
+    const map = new Map();
+    db.games.forEach(game=>{
+      for (const participant of game.participants ?? []) {
+        const id = parseInt(participant.playerId);
+        if (!Number.isFinite(id)) continue;
+        map.set(id, (map.get(id) ?? 0) + 1);
+      }
+    });
+    return map;
+  },[db.games]);
 
   const nextSimulationDate = useMemo(()=>getNextDate(getLatestRoundDate(db.rounds)),[db.rounds]);
 
@@ -5386,11 +5478,13 @@ function AppBody() {
             games={[...db.games].sort((a,b)=>String(b.date).localeCompare(String(a.date)) || b.id-a.id)}
             courses={db.courses}
             players={db.players}
+            playerUsage={playerUsage}
             profile={db.profile}
             displayHcp={realDisplayHcp}
             onStartGame={startGame}
             onAddPlayer={addPlayer}
             onUpdatePlayer={updatePlayer}
+            onDeletePlayer={deletePlayer}
             onUpsertCourse={upsertCourse}
             onScore={setGameScore}
             onWolfChoice={setWolfChoice}
