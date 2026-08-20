@@ -149,7 +149,7 @@ describe("WHS Handicap-Index adjustment table", () => {
   });
 });
 
-describe("reconstructs the golf.de HCPI progression (Christian Mießen)", () => {
+describe("reconstructs the golf.de HCPI progression of a real record", () => {
   // Score Differentials in chronologischer Reihenfolge aus dem golf.de-Report.
   const chronologicalDiffs = [56.0, 55.4, 50.4, 46.6];
   // Vom golf.de-Report abgelesene Handicap-Index-Werte nach n Runden.
@@ -164,8 +164,8 @@ describe("reconstructs the golf.de HCPI progression (Christian Mießen)", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Vollständiger Datensatz aus "Scoring_Record_Detailliert_Christian_Mießen_
-// 20.07.2026.pdf" (15 Runden). Chronologisch, älteste zuerst (golf.de Nr. 15..1).
+// Vollständiger Datensatz aus einem detaillierten golf.de Scoring Record
+// (15 Runden, Sommer 2026). Chronologisch, älteste zuerst (golf.de Nr. 15..1).
 //
 // rawSD      = Score Differential OHNE Anpassungen -> muss calcRawScoreDiff mit
 //              dem zum Spielzeitpunkt gültigen Handicap-Index (hcpiBefore)
@@ -338,13 +338,13 @@ describe("buildIndexTimeline reproduces the full golf.de progression (all 15 rou
   });
 });
 
-// Vollständiger golf.de-Import "Hans-Jürgen Juretzek 07.08.2026" (20 Runden),
-// chronologisch älteste zuerst. Enthält genau einen Exceptional Score:
+// Vollständiger golf.de-Import eines zweiten Scoring Records (20 Runden,
+// Stand 07.08.2026), chronologisch älteste zuerst. Enthält genau einen Exceptional Score:
 // Runde vom 26.07.2026 (Index davor 31,8; Roh-Differenzial 24,6 -> 7,2 Schläge
 // darunter -> -1,0), der die betroffene Runde von 24,6 auf 23,6 senkt.
 // Wichtig: source + handicapIndexBefore markieren echte golf.de-Importe, für die
 // die Engine den von golf.de geführten HCPI-davor als Anker nutzt.
-const hjImport2026 = [
+const importedRecord2026 = [
   { nr: 20, holes: 9,  gbe: 51,  courseRating: 30.1, slopeRating: 100, handicapIndexBefore: 54.0, reportedSD: 51.9 },
   { nr: 19, holes: 9,  gbe: 48,  courseRating: 30.1, slopeRating: 100, handicapIndexBefore: 50.9, reportedSD: 46.9 },
   { nr: 18, holes: 18, gbe: 121, courseRating: 71.7, slopeRating: 130, handicapIndexBefore: 45.9, reportedSD: 41.9 },
@@ -367,12 +367,12 @@ const hjImport2026 = [
   { nr: 1,  holes: 9,  gbe: 52,  courseRating: 37.8, slopeRating: 129, handicapIndexBefore: 29.4, reportedSD: 28.9 },
 ].map(r => ({ ...r, source: "golf.de-pdf" }));
 
-describe("golf.de import with an exceptional score (Hans-Jürgen 07.08.2026)", () => {
-  const steps = buildIndexTimeline(hjImport2026, 54);
+describe("golf.de import with an exceptional score (record of 07.08.2026)", () => {
+  const steps = buildIndexTimeline(importedRecord2026, 54);
 
   it("derives (not copies) every SD equal to golf.de – incl. the exceptional round 24.6 -> 23.6", () => {
     steps.forEach((step, i) => {
-      expect(step.diff).toBe(hjImport2026[i].reportedSD);
+      expect(step.diff).toBe(importedRecord2026[i].reportedSD);
     });
     const exc = steps.find(s => s.round.nr === 3)!;
     expect(exc.rawDiff).toBe(24.6); // Roh-Differenzial
@@ -388,7 +388,7 @@ describe("golf.de import with an exceptional score (Hans-Jürgen 07.08.2026)", (
 
   it("uses golf.de's HCPI-before as anchor for every round", () => {
     steps.forEach((step, i) => {
-      expect(step.preRoundHcp).toBe(hjImport2026[i].handicapIndexBefore);
+      expect(step.preRoundHcp).toBe(importedRecord2026[i].handicapIndexBefore);
     });
   });
 
