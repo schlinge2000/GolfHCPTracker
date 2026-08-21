@@ -3248,8 +3248,12 @@ function GameRow({game, onOpen, onDelete}) {
 }
 
 /** Bilanz aus allen beendeten Matchplay-Spielen, je Gegner. */
+// Kopfzeile und Zeilen der Mitspieler-Liste teilen dieselben Spalten – deshalb
+// steht das Raster an einer Stelle.
+const playerRowGrid: CSSProperties = {display:"grid",gridTemplateColumns:"1fr 84px auto",gap:8,alignItems:"center"};
+
 /**
- * Eine Zeile zum Bearbeiten: Name und Handicap-Index. Gespeichert wird beim
+ * Eine Zeile zum Bearbeiten: Name und HCP-Index. Gespeichert wird beim
  * Verlassen des Feldes, damit Zwischenstände beim Tippen ("9,") nichts
  * überschreiben. Der key im Aufrufer enthält die gespeicherten Werte – ändert
  * sie etwas anderes (ein Scan), zeigt die Zeile wieder den echten Stand.
@@ -3273,10 +3277,10 @@ function PlayerEditRow({player, games, onUpdate, onRequestDelete}) {
 
   return (
     <div style={{padding:"10px 0",borderTop:"1px solid var(--color-border-tertiary)"}}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 84px auto",gap:8,alignItems:"center"}}>
+      <div style={playerRowGrid}>
         <input style={inp} value={name} aria-label={t("Name","Name")}
           onChange={e=>setName(e.target.value)} onBlur={commitName} onKeyDown={blurOnEnter}/>
-        <input style={inp} type="number" step="0.1" value={hcp} aria-label={t("Handicap-Index","Handicap index")}
+        <input style={inp} type="number" step="0.1" value={hcp} placeholder="HCP" aria-label={t("HCP-Index","Handicap index")}
           onChange={e=>setHcp(e.target.value)} onBlur={commitHcp} onKeyDown={blurOnEnter}/>
         <button type="button" onClick={()=>onRequestDelete(player)}
           style={{padding:"8px 12px",borderRadius:"var(--border-radius-md)",border:"0.5px solid #E24B4A",background:"transparent",cursor:"pointer",fontSize:12,color:"#E24B4A",whiteSpace:"nowrap"}}>
@@ -3285,7 +3289,7 @@ function PlayerEditRow({player, games, onUpdate, onRequestDelete}) {
       </div>
       {games > 0 && (
         <div style={{fontSize:11,color:COLORS.textSec,marginTop:4}}>
-          {t(`in ${games} Spiel${games===1?"":"en"} · der neue Index gilt erst für das nächste`,
+          {t(`in ${games} Spiel${games===1?"":"en"} · der neue HCP-Index gilt erst für das nächste`,
              `in ${games} game${games===1?"":"s"} · the new index only counts from the next one`)}
         </div>
       )}
@@ -3294,7 +3298,7 @@ function PlayerEditRow({player, games, onUpdate, onRequestDelete}) {
 }
 
 /**
- * Die gespeicherten Mitspieler: Name und Index nachziehen, oder ganz raus.
+ * Die gespeicherten Mitspieler: Name und HCP-Index nachziehen, oder ganz raus.
  *
  * Gelöscht wird nur der Eintrag in dieser Liste, und ein geänderter Index gilt
  * erst für das nächste Spiel: gespielte Spiele tragen Name, Index und Course
@@ -3315,11 +3319,18 @@ function PlayerManager({players, usage=new Map(), onUpdate, onDelete}) {
     <div>
       <div style={{fontSize:13,color:COLORS.textSec,lineHeight:1.55}}>
         {guests.length
-          ? t("Einmal angelegt, bleiben sie für die nächsten Spiele gespeichert. Hier lassen sich Name und Index nachziehen – oder der Eintrag ganz entfernen.",
-              "Once added they stay saved for your next games. Here you can update name and index – or remove the entry for good.")
+          ? t("Einmal angelegt, bleiben sie für die nächsten Spiele gespeichert. Hier lassen sich Name und HCP nachziehen – oder der Eintrag ganz entfernen.",
+              "Once added they stay saved for your next games. Here you can update name and handicap – or remove the entry for good.")
           : t("Noch keine Mitspieler gespeichert. Sie entstehen beim Anlegen eines Spiels oder beim Scannen einer Spielerkarte.",
               "No players saved yet. They appear when you set up a game or scan a player card.")}
       </div>
+      {guests.length > 0 && (
+        <div style={{...playerRowGrid,marginTop:12,fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec}}>
+          <span>{t("Name","Name")}</span>
+          <span>HCP</span>
+          <span/>
+        </div>
+      )}
       {guests.map(player=>{
         const games = usage.get(player.id) ?? 0;
         return (
