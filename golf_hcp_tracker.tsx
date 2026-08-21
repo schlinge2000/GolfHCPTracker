@@ -2490,7 +2490,7 @@ function StrokeDots({strokes}) {
   return <span style={{fontSize:13,color:COLORS.hcp,letterSpacing:1,fontWeight:700}}>{"•".repeat(Math.min(strokes, 4))}</span>;
 }
 
-function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAddPlayer, onUpdatePlayer, onUpsertCourse, onCancel}) {
+function GameSetupForm({courses, players, playerUsage, profileName, displayHcp, onStart, onAddPlayer, onUpdatePlayer, onDeletePlayer, onUpsertCourse, onCancel}) {
   const t = useT();
   const [date, setDate] = useState(()=>new Date().toISOString().slice(0,10));
   const [courseId, setCourseId] = useState(()=>courses[0]?.id ?? "");
@@ -2504,6 +2504,7 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
   const [newName, setNewName] = useState("");
   const [newHcp, setNewHcp] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [managing, setManaging] = useState(false);
 
   const course = courses.find(c=>c.id === parseInt(courseId));
   const holes = useMemo(
@@ -2519,6 +2520,13 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
     return next;
   });
   const toggleFormat = id => setFormats(prev=>prev.includes(id) ? prev.filter(x=>x !== id) : [...prev, id]);
+
+  // Wer hier gelöscht wird, fliegt auch aus Auswahl und Paarung dieses Spiels.
+  const removePlayer = id => {
+    onDeletePlayer(id);
+    setSelectedIds(prev=>prev.filter(x=>x !== id));
+    setMatchup(prev=>prev.filter(x=>x !== String(id)));
+  };
 
   const toggleMatchup = id => setMatchup(prev=>{
     const key = String(id);
@@ -2650,9 +2658,23 @@ function GameSetupForm({courses, players, profileName, displayHcp, onStart, onAd
           <input style={inp} value={newName} onChange={e=>setNewName(e.target.value)} placeholder={t("Mitspieler hinzufügen","Add a player")}/>
           <input type="number" step="0.1" style={inp} value={newHcp} onChange={e=>setNewHcp(e.target.value)} placeholder="HCP"/>
           <button type="button" onClick={addPlayer} style={{...gamesGhostBtn,padding:"10px 14px"}}>+</button>
-          <button type="button" onClick={()=>setScanning(true)} style={{...gamesGhostBtn,padding:"10px 14px",gridColumn:"1 / -1"}}>{t("Spielerkarte scannen","Scan a player card")}</button>
+          <div style={{gridColumn:"1 / -1",display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button type="button" onClick={()=>setScanning(true)} style={{...gamesGhostBtn,padding:"10px 14px",flex:"1 1 180px"}}>{t("Spielerkarte scannen","Scan a player card")}</button>
+            {players.some(player=>!player.isMe) && (
+              <button type="button" onClick={()=>setManaging(true)} style={{...gamesGhostBtn,padding:"10px 14px",flex:"0 1 auto"}}>{t("Mitspieler bearbeiten","Edit players")}</button>
+            )}
+          </div>
         </div>
-      </div>, t("Mitspieler bleiben für die nächsten Spiele gespeichert – löschen kannst du sie in der Games-Übersicht","Players stay saved for your next games – you can delete them in the games overview"))}
+      </div>, t("Mitspieler bleiben für die nächsten Spiele gespeichert – Index nachziehen oder löschen unter „Mitspieler bearbeiten“","Players stay saved for your next games – update an index or remove someone under Edit players"))}
+
+      {managing && (
+        <Modal title={t("Mitspieler bearbeiten","Edit players")} onClose={()=>setManaging(false)} maxWidth={560}>
+          <PlayerManager players={players} usage={playerUsage} onUpdate={onUpdatePlayer} onDelete={removePlayer}/>
+          <div style={{display:"flex",gap:8,marginTop:16}}>
+            <button type="button" onClick={()=>setManaging(false)} style={{...gamesPrimaryBtn,padding:"9px 18px"}}>{t("Fertig","Done")}</button>
+          </div>
+        </Modal>
+      )}
 
       {scanning && (
         <QrScanDialog
@@ -3227,72 +3249,126 @@ function GameRow({game, onOpen, onDelete}) {
 
 /** Bilanz aus allen beendeten Matchplay-Spielen, je Gegner. */
 /**
- * Die gespeicherten Mitspieler, damit man sie auch wieder loswird. Gelöscht
- * wird nur der Eintrag in dieser Liste: gespielte Spiele tragen Name, Index und
- * Course Handicap ihrer Teilnehmer selbst und bleiben vollständig. Der eigene
- * Eintrag steht nicht zur Wahl – an ihm hängt die Zuordnung „du" in den Spielen.
+ * Eine Zeile zum Bearbeiten: Name und Handicap-Index. Gespeichert wird beim
+ * Verlassen des Feldes, damit Zwischenstände beim Tippen ("9,") nichts
+ * überschreiben. Der key im Aufrufer enthält die gespeicherten Werte – ändert
+ * sie etwas anderes (ein Scan), zeigt die Zeile wieder den echten Stand.
  */
-function SavedPlayers({players, usage=new Map(), onDelete}) {
+function PlayerEditRow({player, games, onUpdate, onRequestDelete}) {
+  const t = useT();
+  const [name, setName] = useState(player.name ?? "");
+  const [hcp, setHcp] = useState(String(player.hcpIndex ?? ""));
+
+  const commitName = () => {
+    const value = name.trim();
+    if (value && value !== player.name) onUpdate(player.id, {name: value});
+    else setName(player.name ?? "");
+  };
+  const commitHcp = () => {
+    const value = parseFloat(String(hcp).replace(",", "."));
+    if (Number.isFinite(value) && value !== player.hcpIndex) onUpdate(player.id, {hcpIndex: value});
+    else setHcp(String(player.hcpIndex ?? ""));
+  };
+  const blurOnEnter = event => { if (event.key === "Enter") event.currentTarget.blur(); };
+
+  return (
+    <div style={{padding:"10px 0",borderTop:"1px solid var(--color-border-tertiary)"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 84px auto",gap:8,alignItems:"center"}}>
+        <input style={inp} value={name} aria-label={t("Name","Name")}
+          onChange={e=>setName(e.target.value)} onBlur={commitName} onKeyDown={blurOnEnter}/>
+        <input style={inp} type="number" step="0.1" value={hcp} aria-label={t("Handicap-Index","Handicap index")}
+          onChange={e=>setHcp(e.target.value)} onBlur={commitHcp} onKeyDown={blurOnEnter}/>
+        <button type="button" onClick={()=>onRequestDelete(player)}
+          style={{padding:"8px 12px",borderRadius:"var(--border-radius-md)",border:"0.5px solid #E24B4A",background:"transparent",cursor:"pointer",fontSize:12,color:"#E24B4A",whiteSpace:"nowrap"}}>
+          {t("Löschen","Delete")}
+        </button>
+      </div>
+      {games > 0 && (
+        <div style={{fontSize:11,color:COLORS.textSec,marginTop:4}}>
+          {t(`in ${games} Spiel${games===1?"":"en"} · der neue Index gilt erst für das nächste`,
+             `in ${games} game${games===1?"":"s"} · the new index only counts from the next one`)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Die gespeicherten Mitspieler: Name und Index nachziehen, oder ganz raus.
+ *
+ * Gelöscht wird nur der Eintrag in dieser Liste, und ein geänderter Index gilt
+ * erst für das nächste Spiel: gespielte Spiele tragen Name, Index und Course
+ * Handicap ihrer Teilnehmer selbst und bleiben unangetastet. Der eigene Eintrag
+ * steht nicht zur Wahl – Name und Index kommen dort aus dem Profil, und an ihm
+ * hängt die Zuordnung „du" in den Spielen.
+ *
+ * Bestätigt wird in der Zeile, nicht in einem Dialog: die Liste steht auch
+ * innerhalb eines Modals (im Spiel-Setup), und ein Modal im Modal ginge dort
+ * nicht auf.
+ */
+function PlayerManager({players, usage=new Map(), onUpdate, onDelete}) {
   const t = useT();
   const [pendingDelete, setPendingDelete] = useState(null);
   const guests = players.filter(player=>!player.isMe);
-  if (!players.length) return null;
 
+  return (
+    <div>
+      <div style={{fontSize:13,color:COLORS.textSec,lineHeight:1.55}}>
+        {guests.length
+          ? t("Einmal angelegt, bleiben sie für die nächsten Spiele gespeichert. Hier lassen sich Name und Index nachziehen – oder der Eintrag ganz entfernen.",
+              "Once added they stay saved for your next games. Here you can update name and index – or remove the entry for good.")
+          : t("Noch keine Mitspieler gespeichert. Sie entstehen beim Anlegen eines Spiels oder beim Scannen einer Spielerkarte.",
+              "No players saved yet. They appear when you set up a game or scan a player card.")}
+      </div>
+      {guests.map(player=>{
+        const games = usage.get(player.id) ?? 0;
+        return (
+          <div key={player.id}>
+            <PlayerEditRow
+              key={`${player.id}|${player.name}|${player.hcpIndex}`}
+              player={player}
+              games={games}
+              onUpdate={onUpdate}
+              onRequestDelete={setPendingDelete}
+            />
+            {pendingDelete?.id === player.id && (
+              <div style={{padding:"10px 12px",marginBottom:4,borderRadius:"var(--border-radius-md)",background:"#FDF1E6",color:"#9a5314",fontSize:12.5,lineHeight:1.55}}>
+                {games === 1
+                  ? t(`${player.name} steht in einem Spiel. Das bleibt vollständig erhalten – es trägt Name, Index und Course Handicap seiner Teilnehmer selbst, auch die Bilanz im Head-to-Head. Nur die Auswahl für neue Spiele verschwindet.`,
+                      `${player.name} appears in one game. It stays intact – it carries each player's name, index and course handicap itself, head-to-head records included. Only the choice for new games goes away.`)
+                  : games
+                    ? t(`${player.name} steht in ${games} Spielen. Die bleiben vollständig erhalten – sie tragen Name, Index und Course Handicap ihrer Teilnehmer selbst, auch die Bilanz im Head-to-Head. Nur die Auswahl für neue Spiele verschwindet.`,
+                        `${player.name} appears in ${games} games. Those stay intact – they carry each player's name, index and course handicap themselves, head-to-head records included. Only the choice for new games goes away.`)
+                    : t(`${player.name} hat noch in keinem Spiel mitgespielt.`,`${player.name} has not played in any game yet.`)}
+                <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+                  <button type="button" onClick={()=>{ onDelete(player.id); setPendingDelete(null); }}
+                    style={{padding:"7px 14px",borderRadius:"var(--border-radius-md)",background:"#E24B4A",color:"#fff",border:"none",cursor:"pointer",fontFamily:"var(--font-sans)",fontWeight:600,fontSize:12.5}}>
+                    {t("Endgültig löschen","Delete for good")}
+                  </button>
+                  <button type="button" onClick={()=>setPendingDelete(null)}
+                    style={{padding:"7px 14px",borderRadius:"var(--border-radius-md)",background:"rgba(255,255,255,0.9)",border:`0.5px solid ${COLORS.border}`,color:"var(--color-text-primary)",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:12.5}}>
+                    {t("Abbrechen","Cancel")}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Die Mitspieler-Liste als eigener Abschnitt in der Games-Übersicht. */
+function SavedPlayers({players, usage, onUpdate, onDelete}) {
+  const t = useT();
+  if (!players.length) return null;
   return (
     <div style={{marginTop:20}}>
       <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:COLORS.textSec,marginBottom:8}}>{t("Mitspieler","Players")}</div>
       <div style={{...subtleCardStyle,padding:"14px 16px"}}>
-        <div style={{fontSize:13,color:COLORS.textSec,lineHeight:1.55,marginBottom:guests.length?12:0}}>
-          {guests.length
-            ? t("Einmal angelegt, bleiben sie für die nächsten Spiele gespeichert. Wer nicht mehr mitspielt, kann hier raus.",
-                "Once added they stay saved for your next games. Whoever no longer plays along can go here.")
-            : t("Noch keine Mitspieler gespeichert. Sie entstehen beim Anlegen eines Spiels oder beim Scannen einer Spielerkarte.",
-                "No players saved yet. They appear when you set up a game or scan a player card.")}
-        </div>
-        {guests.map(player=>(
-          <div key={player.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"9px 0",borderTop:"1px solid var(--color-border-tertiary)"}}>
-            <div style={{minWidth:0}}>
-              <div style={{fontSize:14,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{player.name}</div>
-              <div style={{fontSize:12,color:COLORS.textSec}}>
-                {t("Index","Index")} {player.hcpIndex}
-                {(usage.get(player.id) ?? 0) > 0 && ` · ${t(`${usage.get(player.id)} Spiel${usage.get(player.id)===1?"":"e"}`,`${usage.get(player.id)} game${usage.get(player.id)===1?"":"s"}`)}`}
-              </div>
-            </div>
-            <button type="button" onClick={()=>setPendingDelete(player)}
-              style={{padding:"4px 10px",borderRadius:"var(--border-radius-md)",border:"0.5px solid #E24B4A",background:"transparent",cursor:"pointer",fontSize:12,color:"#E24B4A",flexShrink:0}}>
-              {t("Löschen","Delete")}
-            </button>
-          </div>
-        ))}
+        <PlayerManager players={players} usage={usage} onUpdate={onUpdate} onDelete={onDelete}/>
       </div>
-
-      {pendingDelete && (()=>{
-        const games = usage.get(pendingDelete.id) ?? 0;
-        return (
-          <Modal title={t("Mitspieler löschen?","Delete player?")} onClose={()=>setPendingDelete(null)}>
-            <div style={{fontSize:15,fontWeight:600,marginBottom:8}}>{pendingDelete.name}</div>
-            <p style={{fontSize:14,lineHeight:1.6,color:"var(--color-text-secondary)",marginTop:0}}>
-              {games
-                ? games === 1
-                  ? t(`${pendingDelete.name} steht in einem Spiel. Das bleibt vollständig erhalten – es trägt Name, Index und Course Handicap seiner Teilnehmer selbst, auch die Bilanz im Head-to-Head. Nur die Auswahl für neue Spiele verschwindet.`,
-                      `${pendingDelete.name} appears in one game. It stays intact – it carries each player's name, index and course handicap itself, head-to-head records included. Only the choice for new games goes away.`)
-                  : t(`${pendingDelete.name} steht in ${games} Spielen. Die bleiben vollständig erhalten – sie tragen Name, Index und Course Handicap ihrer Teilnehmer selbst, auch die Bilanz im Head-to-Head. Nur die Auswahl für neue Spiele verschwindet.`,
-                      `${pendingDelete.name} appears in ${games} games. Those stay intact – they carry each player's name, index and course handicap themselves, head-to-head records included. Only the choice for new games goes away.`)
-                : t(`${pendingDelete.name} hat noch in keinem Spiel mitgespielt.`,`${pendingDelete.name} has not played in any game yet.`)}
-            </p>
-            <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
-              <button onClick={()=>{ onDelete(pendingDelete.id); setPendingDelete(null); }}
-                style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"#E24B4A",color:"#fff",border:"none",cursor:"pointer",fontFamily:"var(--font-sans)",fontWeight:600,fontSize:14}}>
-                {t("Löschen","Delete")}
-              </button>
-              <button onClick={()=>setPendingDelete(null)}
-                style={{padding:"9px 18px",borderRadius:"var(--border-radius-md)",background:"transparent",border:`0.5px solid ${COLORS.border}`,color:"var(--color-text-primary)",cursor:"pointer",fontFamily:"var(--font-sans)",fontSize:14}}>
-                {t("Abbrechen","Cancel")}
-              </button>
-            </div>
-          </Modal>
-        );
-      })()}
     </div>
   );
 }
@@ -3396,11 +3472,13 @@ function GamesView({games, courses, players, playerUsage, profile, displayHcp, o
         <GameSetupForm
           courses={courses}
           players={players}
+          playerUsage={playerUsage}
           profileName={profile.name}
           displayHcp={displayHcp}
           onStart={draft=>setScreen({mode:"play", gameId:onStartGame(draft)})}
           onAddPlayer={onAddPlayer}
           onUpdatePlayer={onUpdatePlayer}
+          onDeletePlayer={onDeletePlayer}
           onUpsertCourse={onUpsertCourse}
           onCancel={()=>setScreen({mode:"list"})}
         />
@@ -3483,7 +3561,7 @@ function GamesView({games, courses, players, playerUsage, profile, displayHcp, o
             ))}
       </div>
 
-      <SavedPlayers players={players} usage={playerUsage} onDelete={onDeletePlayer}/>
+      <SavedPlayers players={players} usage={playerUsage} onUpdate={onUpdatePlayer} onDelete={onDeletePlayer}/>
     </div>
   );
 }
