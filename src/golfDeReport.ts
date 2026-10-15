@@ -100,7 +100,9 @@ export function parseGolfDeDetailedReport(text: string) {
       const valueStart = current.index + current[0].length;
       const valueEnd = next ? next.index : block.length;
       const value = normalizeWhitespace(block.slice(valueStart, valueEnd));
-      map.set(key, value);
+      // Die eigenen Angaben der Runde stehen vorn. Was spaeter noch einmal
+      // so heisst, gehoert nicht zu ihr und darf sie nicht ueberschreiben.
+      if (!map.has(key)) map.set(key, value);
     }
 
     return map;
@@ -137,9 +139,13 @@ export function parseGolfDeDetailedReport(text: string) {
     const match = parseSummaryLine(lines[index]);
     if (!match) continue;
 
+    // Unter der letzten Runde druckt golf.de die Legende ("HCPI: Handicap-Index",
+    // "GBE: ... (auf 18 Loecher)" ...). Sie gehoert nicht mehr zur Runde - sonst
+    // liest der Parser dort "18" als HCPI davor, und bei einer 9-Loch-Runde
+    // stimmt dann das Differenzial nicht mehr.
     const detailLines = [];
     let nextIndex = index + 1;
-    while (nextIndex < lines.length && !parseSummaryLine(lines[nextIndex])) {
+    while (nextIndex < lines.length && !parseSummaryLine(lines[nextIndex]) && !/^legende\b/i.test(lines[nextIndex])) {
       detailLines.push(lines[nextIndex]);
       nextIndex += 1;
     }
